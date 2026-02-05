@@ -6,10 +6,15 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import pool from '../config/db.js';
 import { verifyToken } from '../middleware/authMiddleware.js'; 
 
+// Environment variables handle karne ke liye
+const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000";
+const CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || "http://localhost:5000/api/auth/google/callback";
+
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: "http://localhost:5000/api/auth/google/callback" 
+    // ✅ FIXED: Hardcoded localhost removed
+    callbackURL: CALLBACK_URL 
   },
   async (accessToken, refreshToken, profile, done) => {
     try {
@@ -34,35 +39,35 @@ passport.use(new GoogleStrategy({
   }
 ));
 
-
 router.post('/login', authController.login);
 router.post('/signup', authController.signup);
-
 router.post('/reset-password', authController.resetPassword);
-
 router.get('/users', verifyToken, authController.getUsers); 
 
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
 router.get('/google/callback', 
   passport.authenticate('google', { 
-    failureRedirect: 'http://localhost:3000/login', 
+    // ✅ FIXED: Fail hone par Vercel link par bheje ga
+    failureRedirect: `${CLIENT_URL}/login`, 
     session: true 
   }),
   (req, res) => {
     const user = req.user;
 
+    // Cookies set karein
     res.cookie('role', user.role, { path: '/' });
     res.cookie('userId', user.id, { path: '/' });
 
     console.log(`Redirecting User: ${user.email} with Role: ${user.role}`);
 
+    // ✅ FIXED: Redirect logic now uses dynamic CLIENT_URL (Vercel)
     if (user.role === 'admin') {
-        return res.redirect('http://localhost:3000/admin');
+        return res.redirect(`${CLIENT_URL}/admin`);
     } else if (user.role === 'teacher') {
-        return res.redirect('http://localhost:3000/teacher');
+        return res.redirect(`${CLIENT_URL}/teacher`);
     } else {
-        return res.redirect(`http://localhost:3000/dashboard/student/${user.id}`);
+        return res.redirect(`${CLIENT_URL}/dashboard/student/${user.id}`);
     }
   }
 );
