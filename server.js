@@ -16,15 +16,15 @@ import { transporter } from './config/mail.js';
 
 const app = express();
 
-// ✅ CRITICAL FOR RAILWAY: Trust proxy is required for secure cookies
+// ✅ 1. PROXY TRUST: Must be first for Railway/HTTPS
 app.set('trust proxy', 1);
 
-// --- SECURITY MIDDLEWARE ---
+// ✅ 2. SECURITY: CSP disabled for Google Auth compatibility
 app.use(helmet({
-  contentSecurityPolicy: false, // Google Auth ke liye CSP disable ya configure karna parta hai
+  contentSecurityPolicy: false,
 })); 
 
-// ✅ FIXED CORS: Credentials allowed for session/cookies
+// ✅ 3. CORS: Specific to your Vercel URL
 app.use(cors({
   origin: [
     'http://localhost:3000', 
@@ -37,25 +37,26 @@ app.use(cors({
 
 app.use(express.json());
 
-// ✅ FIXED SESSION: Secure and optimized for Production
+// ✅ 4. SESSION: Optimized for Cross-Domain Cookies (Vercel <-> Railway)
 app.use(session({
   secret: process.env.SESSION_SECRET || 'lahore_portal_secret_2026',
   resave: false,
   saveUninitialized: false, 
-  proxy: true, // Railway proxy support
+  proxy: true, 
   cookie: { 
-    secure: process.env.NODE_ENV === "production", // Production (HTTPS) mein true
-    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", // Cross-site support for Vercel -> Railway
+    // Important for Production
+    secure: process.env.NODE_ENV === "production", 
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", 
     httpOnly: true, 
-    maxAge: 24 * 60 * 60 * 1000 // 1 day
+    maxAge: 24 * 60 * 60 * 1000 // 1 Day
   }
 }));
 
+// ✅ 5. PASSPORT: Initialize after Session
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ✅ Note: Serialization yahan bhi hai aur authRoutes mein bhi ho sakti hai.
-// Behtar hai aik hi jagah rahe. Agar authRoutes mein likh di hai toh yahan se hata dein.
+// Serialization
 passport.serializeUser((user, done) => {
   done(null, user);
 });
@@ -64,6 +65,7 @@ passport.deserializeUser((user, done) => {
   done(null, user);
 });
 
+// ✅ 6. ROUTES
 app.use('/api/auth', authRoutes); 
 app.use('/api/courses', courseRoutes); 
 app.use('/api/teacher', teacherRoutes);
@@ -76,10 +78,9 @@ app.get('/', (req, res) => {
   res.send('Lahore Education API is Online and Running!');
 });
 
-// ✅ Better Error Logging: Console mein asli error dikhaye ga
+// ✅ 7. ERROR HANDLING
 app.use((err, req, res, next) => {
   console.error("❌ SERVER CRASH ERROR:", err.message);
-  console.error(err.stack);
   res.status(500).json({ 
     success: false, 
     message: "Server mein koi masla hai!", 

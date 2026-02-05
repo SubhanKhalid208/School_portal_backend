@@ -21,11 +21,11 @@ passport.use(new GoogleStrategy({
         const email = emails[0].value;
         const profile_pic = photos[0]?.value || null;
 
-        // Check if user already exists
+        // User ko database mein check karna
         let user = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
 
         if (user.rows.length === 0) {
-            // ✅ FIXED: Added 'password' to handle NOT NULL constraint in DB
+            // Naya user insert karna (Dummy password ke sath taake NOT NULL error na aaye)
             const newUser = await pool.query(
                 "INSERT INTO users (name, email, profile_pic, role, is_approved, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
                 [displayName, email, profile_pic, 'student', true, 'google_authenticated']
@@ -69,18 +69,19 @@ router.get('/google/callback', (req, res, next) => {
                 return next(loginErr);
             }
             
-            // Set Production-ready Cookies
+            // ✅ FIX: Production environment ke liye cookie settings
+            const isProd = process.env.NODE_ENV === 'production';
             const cookieOptions = { 
                 path: '/', 
-                secure: process.env.NODE_ENV === 'production', 
-                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                secure: isProd, // Production (HTTPS) mein true hona chahiye
+                sameSite: isProd ? 'none' : 'lax', // Cross-site (Vercel to Railway) ke liye 'none' lazmi hai
                 maxAge: 24 * 60 * 60 * 1000 
             };
 
             res.cookie('role', user.role, cookieOptions);
             res.cookie('userId', user.id.toString(), cookieOptions);
 
-            // Logic to redirect based on Role
+            // Role ke mutabiq redirect logic
             let redirectPath = '/dashboard';
             if (user.role === 'admin') {
                 redirectPath = '/admin';
