@@ -7,38 +7,44 @@ import pool from '../config/db.js';
 import { verifyToken } from '../middleware/authMiddleware.js'; 
 
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000";
-const CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || "http://localhost:5000/api/auth/google/callback";
 
-// Google Strategy Configuration
-passport.use(new GoogleStrategy({
-    clientID: process.env.GOOGLE_CLIENT_ID,
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    callbackURL: CALLBACK_URL 
-  },
-  async (accessToken, refreshToken, profile, done) => {
-    try {
-        const { displayName, emails, photos } = profile;
-        const email = emails[0].value;
-        const profile_pic = photos[0]?.value || null;
+// Railway par deployment ke liye full URL lazmi hai
+const CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || "https://schoolportalbackend-production-e803.up.railway.app/api/auth/google/callback";
 
-        // User ko database mein check karna
-        let user = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+// ✅ CRITICAL FIX: Server crash se bachne ke liye check
+if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+    console.error("❌ ERROR: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is missing in .env/Railway Variables!");
+} else {
+    // Google Strategy Configuration
+    passport.use(new GoogleStrategy({
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: CALLBACK_URL 
+      },
+      async (accessToken, refreshToken, profile, done) => {
+        try {
+            const { displayName, emails, photos } = profile;
+            const email = emails[0].value;
+            const profile_pic = photos[0]?.value || null;
 
-        if (user.rows.length === 0) {
-            // Naya user insert karna (Dummy password ke sath taake NOT NULL error na aaye)
-            const newUser = await pool.query(
-                "INSERT INTO users (name, email, profile_pic, role, is_approved, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-                [displayName, email, profile_pic, 'student', true, 'google_authenticated']
-            );
-            return done(null, newUser.rows[0]);
+            // Check user in database
+            let user = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+
+            if (user.rows.length === 0) {
+                const newUser = await pool.query(
+                    "INSERT INTO users (name, email, profile_pic, role, is_approved, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+                    [displayName, email, profile_pic, 'student', true, 'google_authenticated']
+                );
+                return done(null, newUser.rows[0]);
+            }
+            return done(null, user.rows[0]);
+        } catch (err) {
+          console.error("Google Auth Strategy Error:", err);
+          return done(err, null);
         }
-        return done(null, user.rows[0]);
-    } catch (err) {
-      console.error("Google Auth Strategy Error:", err);
-      return done(err, null);
-    }
-  }
-));
+      }
+    ));
+}
 
 // Regular Auth Routes
 router.post('/login', authController.login);
@@ -57,7 +63,7 @@ router.get('/google/callback', (req, res, next) => {
     passport.authenticate('google', (err, user, info) => {
         if (err) {
             console.error("Callback Auth Error:", err);
-            return res.status(500).json({ success: false, message: "Server mein koi masla hai!", error: err.message });
+            return res.status(500).json({ success: false, message: "Auth Failed", error: err.message });
         }
         if (!user) {
             return res.redirect(`${CLIENT_URL}/login?error=auth_failed`);
@@ -69,19 +75,17 @@ router.get('/google/callback', (req, res, next) => {
                 return next(loginErr);
             }
             
-            // ✅ FIX: Production environment ke liye cookie settings
             const isProd = process.env.NODE_ENV === 'production';
             const cookieOptions = { 
                 path: '/', 
-                secure: isProd, // Production (HTTPS) mein true hona chahiye
-                sameSite: isProd ? 'none' : 'lax', // Cross-site (Vercel to Railway) ke liye 'none' lazmi hai
+                secure: isProd, 
+                sameSite: isProd ? 'none' : 'lax', 
                 maxAge: 24 * 60 * 60 * 1000 
             };
 
             res.cookie('role', user.role, cookieOptions);
             res.cookie('userId', user.id.toString(), cookieOptions);
 
-            // Role ke mutabiq redirect logic
             let redirectPath = '/dashboard';
             if (user.role === 'admin') {
                 redirectPath = '/admin';
@@ -91,7 +95,6 @@ router.get('/google/callback', (req, res, next) => {
                 redirectPath = `/dashboard/student/${user.id}`;
             }
             
-            console.log(`✅ Successful Login: Redirecting ${user.email} to ${redirectPath}`);
             return res.redirect(`${CLIENT_URL}${redirectPath}`);
         });
     })(req, res, next);
