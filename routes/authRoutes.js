@@ -21,14 +21,14 @@ passport.use(new GoogleStrategy({
         const email = emails[0].value;
         const profile_pic = photos[0]?.value || null;
 
-        // Check user in Neon Database
+        // Check if user already exists
         let user = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
 
         if (user.rows.length === 0) {
-            // New User Registration
+            // ✅ FIXED: Added 'password' to handle NOT NULL constraint in DB
             const newUser = await pool.query(
-                "INSERT INTO users (name, email, profile_pic, role, is_approved) VALUES ($1, $2, $3, 'student', true) RETURNING *",
-                [displayName, email, profile_pic]
+                "INSERT INTO users (name, email, profile_pic, role, is_approved, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+                [displayName, email, profile_pic, 'student', true, 'google_authenticated']
             );
             return done(null, newUser.rows[0]);
         }
@@ -48,13 +48,11 @@ router.get('/users', verifyToken, authController.getUsers);
 
 // --- GOOGLE AUTH STEPS ---
 
-// 1. Google Login Start
 router.get('/google', passport.authenticate('google', { 
     scope: ['profile', 'email'],
-    prompt: 'select_account' // Taake user har baar account select kar sakay
+    prompt: 'select_account' 
 }));
 
-// 2. Google Callback Handling
 router.get('/google/callback', (req, res, next) => {
     passport.authenticate('google', (err, user, info) => {
         if (err) {
@@ -82,7 +80,7 @@ router.get('/google/callback', (req, res, next) => {
             res.cookie('role', user.role, cookieOptions);
             res.cookie('userId', user.id.toString(), cookieOptions);
 
-            // Dynamic Redirect based on Role
+            // Logic to redirect based on Role
             let redirectPath = '/dashboard';
             if (user.role === 'admin') {
                 redirectPath = '/admin';
