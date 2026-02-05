@@ -6,14 +6,13 @@ import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import pool from '../config/db.js';
 import { verifyToken } from '../middleware/authMiddleware.js'; 
 
-// Environment variables handle karne ke liye
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:3000";
 const CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || "http://localhost:5000/api/auth/google/callback";
 
+// Google Strategy Configuration
 passport.use(new GoogleStrategy({
     clientID: process.env.GOOGLE_CLIENT_ID,
     clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    // ✅ FIXED: Hardcoded localhost removed
     callbackURL: CALLBACK_URL 
   },
   async (accessToken, refreshToken, profile, done) => {
@@ -22,9 +21,11 @@ passport.use(new GoogleStrategy({
         const email = emails[0].value;
         const profile_pic = photos[0]?.value || null;
 
+        // Check user in Neon Database
         let user = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
 
         if (user.rows.length === 0) {
+            // New User Registration
             const newUser = await pool.query(
                 "INSERT INTO users (name, email, profile_pic, role, is_approved) VALUES ($1, $2, $3, 'student', true) RETURNING *",
                 [displayName, email, profile_pic]
@@ -33,43 +34,68 @@ passport.use(new GoogleStrategy({
         }
         return done(null, user.rows[0]);
     } catch (err) {
-      console.error("Google Auth Error:", err);
+      console.error("Google Auth Strategy Error:", err);
       return done(err, null);
     }
   }
 ));
 
+// Regular Auth Routes
 router.post('/login', authController.login);
 router.post('/signup', authController.signup);
 router.post('/reset-password', authController.resetPassword);
 router.get('/users', verifyToken, authController.getUsers); 
 
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+// --- GOOGLE AUTH STEPS ---
 
-router.get('/google/callback', 
-  passport.authenticate('google', { 
-    // ✅ FIXED: Fail hone par Vercel link par bheje ga
-    failureRedirect: `${CLIENT_URL}/login`, 
-    session: true 
-  }),
-  (req, res) => {
-    const user = req.user;
+// 1. Google Login Start
+router.get('/google', passport.authenticate('google', { 
+    scope: ['profile', 'email'],
+    prompt: 'select_account' // Taake user har baar account select kar sakay
+}));
 
-    // Cookies set karein
-    res.cookie('role', user.role, { path: '/' });
-    res.cookie('userId', user.id, { path: '/' });
+// 2. Google Callback Handling
+router.get('/google/callback', (req, res, next) => {
+    passport.authenticate('google', (err, user, info) => {
+        if (err) {
+            console.error("Callback Auth Error:", err);
+            return res.status(500).json({ success: false, message: "Server mein koi masla hai!", error: err.message });
+        }
+        if (!user) {
+            return res.redirect(`${CLIENT_URL}/login?error=auth_failed`);
+        }
+        
+        req.logIn(user, (loginErr) => {
+            if (loginErr) {
+                console.error("Login Session Error:", loginErr);
+                return next(loginErr);
+            }
+            
+            // Set Production-ready Cookies
+            const cookieOptions = { 
+                path: '/', 
+                secure: process.env.NODE_ENV === 'production', 
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                maxAge: 24 * 60 * 60 * 1000 
+            };
 
-    console.log(`Redirecting User: ${user.email} with Role: ${user.role}`);
+            res.cookie('role', user.role, cookieOptions);
+            res.cookie('userId', user.id.toString(), cookieOptions);
 
-    // ✅ FIXED: Redirect logic now uses dynamic CLIENT_URL (Vercel)
-    if (user.role === 'admin') {
-        return res.redirect(`${CLIENT_URL}/admin`);
-    } else if (user.role === 'teacher') {
-        return res.redirect(`${CLIENT_URL}/teacher`);
-    } else {
-        return res.redirect(`${CLIENT_URL}/dashboard/student/${user.id}`);
-    }
-  }
-);
+            // Dynamic Redirect based on Role
+            let redirectPath = '/dashboard';
+            if (user.role === 'admin') {
+                redirectPath = '/admin';
+            } else if (user.role === 'teacher') {
+                redirectPath = '/teacher';
+            } else {
+                redirectPath = `/dashboard/student/${user.id}`;
+            }
+            
+            console.log(`✅ Successful Login: Redirecting ${user.email} to ${redirectPath}`);
+            return res.redirect(`${CLIENT_URL}${redirectPath}`);
+        });
+    })(req, res, next);
+});
 
 export default router;
