@@ -3,7 +3,7 @@ import pool from '../config/db.js';
 
 const router = express.Router();
 
-
+// 1. Check if attendance is already marked
 router.get('/check-status', async (req, res) => {
   const { date, courseId } = req.query;
   if (!date || !courseId) return res.status(400).json({ error: "Date and courseId required" });
@@ -21,6 +21,7 @@ router.get('/check-status', async (req, res) => {
   }
 });
 
+// 2. Mark or Update Attendance
 router.post('/mark', async (req, res) => {
   const { studentId, courseId, status, date, teacherId } = req.body; 
   const attendanceDate = date || new Date().toISOString().split('T')[0];
@@ -49,6 +50,7 @@ router.post('/mark', async (req, res) => {
   }
 });
 
+// 3. Get Attendance for a specific day and course
 router.get('/today', async (req, res) => {
   const { date, courseId } = req.query; 
   try {
@@ -62,24 +64,47 @@ router.get('/today', async (req, res) => {
   }
 });
 
+// ✅ 4. FIXED: Student Attendance Stats & History
+// Frontend should call: /api/attendance/student/3
 router.get('/student/:id', async (req, res) => {
   const { id } = req.params;
+  
+  if (!id || isNaN(id)) {
+    return res.status(400).json({ success: false, error: "Invalid Student ID" });
+  }
+
   try {
     const queryText = `
       SELECT a.id, a.status, TO_CHAR(a.date, 'DD-Mon-YYYY') as attendance_date,
       COALESCE(c.title, c.name, 'Unknown Subject') as subject_name 
-      FROM attendance a LEFT JOIN courses c ON a.course_id = c.id 
-      WHERE a.student_id = $1 ORDER BY a.date DESC`;
+      FROM attendance a 
+      LEFT JOIN courses c ON a.course_id = c.id 
+      WHERE a.student_id = $1 
+      ORDER BY a.date DESC`;
+      
     const historyRes = await pool.query(queryText, [parseInt(id)]);
     const history = historyRes.rows;
+
+    // Agar koi attendance record nahi mila
     if (history.length === 0) {
-      return res.json({ success: true, stats: { totalDays: 0, presentDays: 0, percentage: "0%" }, history: [] });
+      return res.json({ 
+        success: true, 
+        stats: { totalDays: 0, presentDays: 0, percentage: "0%" }, 
+        history: [] 
+      });
     }
+
     const totalDays = history.length;
     const presentDays = history.filter(r => r.status?.toLowerCase() === 'present').length;
     const percentage = ((presentDays / totalDays) * 100).toFixed(1);
-    res.json({ success: true, stats: { totalDays, presentDays, percentage: `${percentage}%` }, history });
+
+    res.json({ 
+      success: true, 
+      stats: { totalDays, presentDays, percentage: `${percentage}%` }, 
+      history 
+    });
   } catch (err) {
+    console.error("❌ Attendance History Error:", err.message);
     res.status(500).json({ success: false, error: "History load nahi ho saki." });
   }
 });

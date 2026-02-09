@@ -3,28 +3,35 @@ import pool from '../config/db.js';
 const router = express.Router();
 import * as teacherController from '../controllers/teacherController.js';
 
+// --- 1. GET DASHBOARD STATS (Optimized) ---
 router.get('/stats', async (req, res) => {
     const { teacherId } = req.query;
     if (!teacherId) return res.status(400).json({ error: "Teacher ID missing hai." });
 
     try {
-        const studentCount = await pool.query("SELECT COUNT(*) FROM users WHERE LOWER(role) = 'student'");
-        const subjectCount = await pool.query("SELECT COUNT(*) FROM courses WHERE teacher_id = $1", [teacherId]);
-        
-        const teacherInfo = await pool.query("SELECT name FROM users WHERE id = $1", [teacherId]);
+        // Optimized: Ek hi request mein saara data
+        const statsQuery = `
+            SELECT 
+                (SELECT COUNT(*) FROM users WHERE LOWER(role) = 'student') as total_students,
+                (SELECT COUNT(*) FROM courses WHERE teacher_id = $1) as total_subjects,
+                (SELECT name FROM users WHERE id = $1) as teacher_name
+        `;
+        const result = await pool.query(statsQuery, [teacherId]);
+        const data = result.rows[0];
 
         res.json({
             success: true,
-            totalStudents: parseInt(studentCount.rows[0].count) || 0,
-            totalSubjects: parseInt(subjectCount.rows[0].count) || 0,
-            teacherName: teacherInfo.rows[0]?.name || "Teacher" 
+            totalStudents: parseInt(data.total_students) || 0,
+            totalSubjects: parseInt(data.total_subjects) || 0,
+            teacherName: data.teacher_name || "Teacher" 
         });
     } catch (err) {
-        console.error("Stats Error:", err.message);
-        res.status(500).json({ error: "Stats load nahi ho sakay." });
+        console.error("❌ Stats Error:", err.message);
+        res.status(500).json({ error: "Lahore DB stats load nahi ho sakay." });
     }
 });
 
+// --- 2. MANAGE COURSES (CRUD) ---
 router.get('/my-courses', async (req, res) => {
     const { teacherId } = req.query;
     if (!teacherId) return res.status(400).json({ error: "Teacher ID missing hai." });
@@ -36,13 +43,14 @@ router.get('/my-courses', async (req, res) => {
         );
         res.json(result.rows || []);
     } catch (err) {
-        console.error("Fetch Error:", err.message);
         res.status(500).json({ error: "Courses load nahi ho sakay." });
     }
 });
 
 router.post('/courses/add', async (req, res) => {
     const { title, description, teacher_id } = req.body;
+    if (!title || !teacher_id) return res.status(400).json({ error: "Title aur Teacher ID lazmi hain." });
+
     try {
         const result = await pool.query(
             "INSERT INTO courses (title, description, teacher_id) VALUES ($1, $2, $3) RETURNING *",
@@ -50,7 +58,7 @@ router.post('/courses/add', async (req, res) => {
         );
         res.status(201).json({ success: true, course: result.rows[0] });
     } catch (err) {
-        res.status(500).json({ error: "Add fail: " + err.message });
+        res.status(500).json({ error: "Course add fail ho gaya." });
     }
 });
 
@@ -62,28 +70,34 @@ router.put('/courses/:id', async (req, res) => {
             "UPDATE courses SET title = $1, description = $2 WHERE id = $3 RETURNING *",
             [title, description, id]
         );
+        if (result.rowCount === 0) return res.status(404).json({ error: "Course nahi mila." });
         res.json({ success: true, course: result.rows[0] });
     } catch (err) {
-        res.status(500).json({ error: "Update fail." });
+        res.status(500).json({ error: "Update process fail ho gaya." });
     }
 });
 
 router.delete('/courses/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        await pool.query("DELETE FROM courses WHERE id = $1", [id]);
-        res.json({ success: true, message: "Deleted successfully." });
+        // Pehle attendance/enrollment delete karni par sakti hai agar schema restrict hai
+        // Filhal direct delete:
+        const result = await pool.query("DELETE FROM courses WHERE id = $1", [id]);
+        if (result.rowCount === 0) return res.status(404).json({ error: "Course pehle hi delete ho chuka hai." });
+        res.json({ success: true, message: "Deleted successfully from Lahore Portal." });
     } catch (err) {
-        res.status(500).json({ error: "Delete fail." });
+        console.error("Delete Error:", err.message);
+        res.status(500).json({ error: "Delete fail: Is course mein students enrolled ho saktay hain." });
     }
 });
 
+// --- 3. ATTENDANCE & STUDENTS ---
 router.get('/students', async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, "name", email FROM "users" WHERE LOWER(role) = \'student\' ORDER BY "name" ASC');
+        const result = await pool.query('SELECT id, name, email FROM users WHERE LOWER(role) = \'student\' ORDER BY name ASC');
         res.json(result.rows || []);
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: "Students list load nahi ho saki." });
     }
 });
 
