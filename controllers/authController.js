@@ -113,21 +113,27 @@ export const login = async (req, res) => {
             { expiresIn: '1d' }
         );
 
+        // ✅ Production Fix: Cookie settings ko simple rakhein ya sirf JSON bhejien
+        // Agar Vercel/Railway pe cookies masla karein, to sirf token bhej dena kafi hai
         res.cookie('token', token, {
-            httpOnly: false, 
-            secure: false,   
-            sameSite: 'lax',
+            httpOnly: true, 
+            secure: true,   // Railway/Vercel (HTTPS) ke liye true hona chahiye
+            sameSite: 'none', // Cross-site requests ke liye 'none' zaroori hai
             path: '/',       
             maxAge: 24 * 60 * 60 * 1000 
         });
 
-        res.json({ 
+        // ✅ Yeh response lazmi hai taake frontend ko data mil sake
+        return res.status(200).json({ 
+            success: true,
             message: "Login Successful!",
             token, 
             user: { id: user.id, email: user.email, role: user.role } 
         });
+
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("Login Controller Error:", err.message);
+        return res.status(500).json({ error: "Internal Server Error" });
     }
 };
 
