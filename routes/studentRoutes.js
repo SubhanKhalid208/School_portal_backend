@@ -99,10 +99,10 @@ router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
         const total = parseInt(statsResult.rows[0].total_days) || 0;
         const percentage = total > 0 ? Math.round((present / total) * 100) : 0;
 
+        // Use subject_name directly from attendance table to avoid schema mismatch
         const historyQuery = `
-            SELECT a.date, a.status, c.title as subject_name 
+            SELECT a.date, a.status, a.subject_name
             FROM attendance a
-            LEFT JOIN courses c ON a.course_id = c.id
             WHERE a.student_id = $1
             ORDER BY a.date DESC LIMIT 10
         `;
