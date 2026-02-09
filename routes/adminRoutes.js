@@ -3,7 +3,9 @@ const router = express.Router();
 import pool from '../config/db.js';
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
-import bcrypt from 'bcryptjs'; // Password security ke liye
+import bcrypt from 'bcryptjs';
+// Pehle middleware file banayein phir yahan import karein
+import { verifyToken } from '../middleware/auth.js'; 
 
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -14,26 +16,24 @@ cloudinary.config({
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// 1. Image Upload to Cloudinary
-router.post('/upload-image', upload.single('file'), async (req, res) => {
+// 1. Image Upload (Protected)
+router.post('/upload-image', verifyToken, upload.single('file'), async (req, res) => {
     try {
-        if (!req.file) return res.status(400).json({ error: "File upload fail hui!" });
+        if (!req.file) return res.status(400).json({ success: false, error: "File missing!" });
 
         const fileBase64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
-        
         const result = await cloudinary.uploader.upload(fileBase64, {
             folder: "lahore_portal_users",
         });
 
-        res.json({ url: result.secure_url }); 
+        res.json({ success: true, url: result.secure_url }); 
     } catch (err) {
-        console.error("Cloudinary Error:", err);
-        res.status(500).json({ error: "Cloudinary upload fail ho gaya." });
+        res.status(500).json({ success: false, error: "Cloudinary upload failed." });
     }
 });
 
-// 2. Admin Stats
-router.get('/stats', async (req, res) => {
+// 2. Admin Stats (AB YE PROTECTED HAI - Browser URL se nahi khulega)
+router.get('/stats', verifyToken, async (req, res) => {
     try {
         const query = `
             SELECT 
@@ -44,17 +44,20 @@ router.get('/stats', async (req, res) => {
         const stats = await pool.query(query);
         
         res.json({
-            teachers: parseInt(stats.rows[0].teachers),
-            students: parseInt(stats.rows[0].students),
-            subjects: parseInt(stats.rows[0].subjects)
+            success: true,
+            data: {
+                teachers: parseInt(stats.rows[0].teachers),
+                students: parseInt(stats.rows[0].students),
+                subjects: parseInt(stats.rows[0].subjects)
+            }
         });
     } catch (err) {
-        res.status(500).json({ error: "Stats load nahi ho sakay." });
+        res.status(500).json({ success: false, error: "Stats load nahi ho sakay." });
     }
 });
 
-// 3. Get All Users (with Search)
-router.get('/users', async (req, res) => {
+// 3. Get All Users (Protected)
+router.get('/users', verifyToken, async (req, res) => {
     const { search } = req.query;
     try {
         let queryText = "SELECT id, name, email, role, profile_pic, is_approved FROM users";
@@ -68,17 +71,16 @@ router.get('/users', async (req, res) => {
         queryText += " ORDER BY id DESC";
 
         const users = await pool.query(queryText, queryParams);
-        res.json(users.rows);
+        res.json({ success: true, data: users.rows });
     } catch (err) {
-        res.status(500).json({ error: "User search error in Lahore DB." });
+        res.status(500).json({ success: false, error: "User fetch error." });
     }
 });
 
-// 4. Create User (Secure Version)
-router.post('/users', async (req, res) => {
+// 4. Create User (Secure & Protected)
+router.post('/users', verifyToken, async (req, res) => {
     const { name, email, role, password, profile_pic } = req.body;
     try {
-        // ✅ SECURE: Password hashing
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password || 'lahore123', salt);
 
@@ -86,15 +88,14 @@ router.post('/users', async (req, res) => {
             "INSERT INTO users (name, email, role, password, profile_pic, is_approved) VALUES ($1, $2, $3, $4, $5, true) RETURNING id, name, email, role",
             [name, email, role, hashedPassword, profile_pic]
         );
-        res.status(201).json(newUser.rows[0]);
+        res.status(201).json({ success: true, data: newUser.rows[0] });
     } catch (err) {
-        console.error("CREATE ERROR:", err.message);
-        res.status(500).json({ error: "Email pehle se maujood hai!" });
+        res.status(500).json({ success: false, error: "Email pehle se maujood hai!" });
     }
 });
 
-// 5. Update User
-router.put('/users/:id', async (req, res) => {
+// 5. Update User (Protected)
+router.put('/users/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
     const { name, email, role, profile_pic } = req.body;
     try {
@@ -103,23 +104,22 @@ router.put('/users/:id', async (req, res) => {
             [name, email, role, profile_pic, id]
         );
         
-        if (result.rowCount === 0) return res.status(404).json({ error: "User nahi mila." });
-        
-        res.json({ success: true, message: "Lahore Database updated!" });
+        if (result.rowCount === 0) return res.status(404).json({ success: false, error: "User nahi mila." });
+        res.json({ success: true, message: "User updated!" });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
-// 6. Delete User
-router.delete('/users/:id', async (req, res) => {
+// 6. Delete User (Protected)
+router.delete('/users/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
     try {
         const result = await pool.query("DELETE FROM users WHERE id = $1", [id]);
-        if (result.rowCount === 0) return res.status(404).json({ error: "User missing." });
-        res.json({ success: true, message: "User deleted successfully." });
+        if (result.rowCount === 0) return res.status(404).json({ success: false, error: "User missing." });
+        res.json({ success: true, message: "User deleted." });
     } catch (err) {
-        res.status(500).json({ error: "Delete fail: User kisi record se linked ho sakta hai." });
+        res.status(500).json({ success: false, error: "Delete fail: Record linked ho sakta hai." });
     }
 });
 
