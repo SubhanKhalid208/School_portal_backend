@@ -44,7 +44,6 @@ app.use(session({
   saveUninitialized: false, 
   proxy: true, 
   cookie: { 
-    // Important for Production
     secure: process.env.NODE_ENV === "production", 
     sameSite: process.env.NODE_ENV === "production" ? "none" : "lax", 
     httpOnly: true, 
@@ -52,35 +51,34 @@ app.use(session({
   }
 }));
 
-// ✅ 5. PASSPORT: Initialize after Session
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Serialization
-passport.serializeUser((user, done) => {
-  done(null, user);
-});
+passport.serializeUser((user, done) => { done(null, user); });
+passport.deserializeUser((user, done) => { done(null, user); });
 
-passport.deserializeUser((user, done) => {
-  done(null, user);
-});
-
-// ✅ 6. ROUTES
+// ✅ 5. ROUTES (Verify these paths)
 app.use('/api/auth', authRoutes); 
 app.use('/api/courses', courseRoutes); 
 app.use('/api/teacher', teacherRoutes);
 app.use('/api/admin', adminRoutes);
+
+// YAHAN DEKHEIN: 
+// Agar aapka frontend `/student/attendance` call kar raha hai,
+// aur backend `/api/student` par mount hai, 
+// to backend file ke andar sirf `/attendance` hona chahiye.
+app.use('/api/student', studentRoutes); 
 app.use('/api/attendance', attendanceRoutes); 
-app.use('/api/student', studentRoutes);
+
 app.use('/api/debug', debugRoutes);
 
 app.get('/', (req, res) => {
-  res.send('Lahore Education API is Online and Running!');
+  res.send('🚀 Lahore Education API is Online and Running!');
 });
 
-// ✅ 7. ERROR HANDLING
+// ✅ 6. ERROR HANDLING
 app.use((err, req, res, next) => {
-  console.error("❌ SERVER CRASH ERROR:", err.message);
+  console.error("❌ SERVER ERROR:", err.message);
   res.status(500).json({ 
     success: false, 
     message: "Server mein koi masla hai!", 
