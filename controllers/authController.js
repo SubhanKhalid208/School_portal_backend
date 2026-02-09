@@ -134,24 +134,54 @@ export const login = async (req, res) => {
 export const signup = async (req, res) => {
     const { email, dob, role, name } = req.body; 
     try {
-        const userExists = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
-        if (userExists.rows.length > 0) {
-            return res.status(400).json({ error: "Email pehle se register hai!" }); 
+        // Email validation
+        if (!email || !email.includes('@')) {
+            return res.status(400).json({ error: "Valid email zaroori hai!" });
         }
 
+        const cleanEmail = email.trim().toLowerCase();
+        
+        // Check if user already exists
+        const userExists = await pool.query("SELECT * FROM users WHERE email = $1", [cleanEmail]);
+        if (userExists.rows.length > 0) {
+            return res.status(400).json({ error: "Yeh email pehle se register hai!" }); 
+        }
+
+        // Insert new student - password will be set later via email link
         const newUser = await pool.query(
-            'INSERT INTO users (name, email, role, is_approved, dob) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-            [name || 'New User', email, role || 'student', true, dob]
+            `INSERT INTO users (name, email, role, is_approved, dob, profile_pic, password) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7) 
+             RETURNING id, name, email, role, is_approved`,
+            [
+                name || 'Student', 
+                cleanEmail, 
+                role || 'student', 
+                true,  // Auto-approve student registrations
+                dob || null, 
+                null,  // Profile pic - can be added later
+                null   // Password - will be set via email link
+            ]
         );
 
-        await sendWelcomeEmail(email, newUser.rows[0].id);
+        const newUserId = newUser.rows[0].id;
+        console.log(`✅ New student registered: ${cleanEmail} (ID: ${newUserId})`);
+
+        // Send welcome email with password setup link
+        try {
+            await sendWelcomeEmail(cleanEmail, newUserId);
+            console.log(`✅ Welcome email sent to: ${cleanEmail}`);
+        } catch (emailErr) {
+            console.error(`⚠️ Email failed for ${cleanEmail}:`, emailErr.message);
+            // Don't fail the registration if email fails, just log it
+        }
 
         res.status(201).json({ 
             success: true, 
-            message: "Registration successful! Welcome email sent." 
+            message: "Registration successful! Email check karein password set karne ke liye.",
+            userId: newUserId
         });
     } catch (err) {
         console.error("Signup Error:", err);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: "Database error: " + err.message });
     }
 };
