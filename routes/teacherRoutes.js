@@ -3,13 +3,21 @@ import pool from '../config/db.js';
 const router = express.Router();
 import * as teacherController from '../controllers/teacherController.js';
 
-// --- 1. GET DASHBOARD STATS (Optimized) ---
-router.get('/stats', async (req, res) => {
-    const { teacherId } = req.query;
-    if (!teacherId) return res.status(400).json({ error: "Teacher ID missing hai." });
+// ✅ JWT Middleware Import karein
+// Yaad rahe Railway ke liye extension .js lazmi hai
+import { verifyToken } from '../middleware/authMiddleware.js';
+
+// Sabhi routes ko protect karne ke liye hum global middleware bhi laga sakte hain
+// Ya har route par alag se (niche wala tarika behtar hai)
+
+// --- 1. GET DASHBOARD STATS (Secure) ---
+// Pehle: /stats?teacherId=3
+// Ab: /stats (ID token se khud nikal aayegi)
+router.get('/stats', verifyToken, async (req, res) => {
+    // verifyToken middleware ne 'req.user' set kar diya hai
+    const teacherId = req.user.id; 
 
     try {
-        // Optimized: Ek hi request mein saara data
         const statsQuery = `
             SELECT 
                 (SELECT COUNT(*) FROM users WHERE LOWER(role) = 'student') as total_students,
@@ -27,29 +35,30 @@ router.get('/stats', async (req, res) => {
         });
     } catch (err) {
         console.error("❌ Stats Error:", err.message);
-        res.status(500).json({ error: "Lahore DB stats load nahi ho sakay." });
+        res.status(500).json({ success: false, error: "Lahore DB stats load nahi ho sakay." });
     }
 });
 
-// --- 2. MANAGE COURSES (CRUD) ---
-router.get('/my-courses', async (req, res) => {
-    const { teacherId } = req.query;
-    if (!teacherId) return res.status(400).json({ error: "Teacher ID missing hai." });
+// --- 2. MANAGE COURSES (Secure CRUD) ---
+router.get('/my-courses', verifyToken, async (req, res) => {
+    const teacherId = req.user.id; 
 
     try {
         const result = await pool.query(
             "SELECT id, title AS name, description FROM courses WHERE teacher_id = $1 ORDER BY id DESC",
             [teacherId]
         );
-        res.json(result.rows || []);
+        res.json({ success: true, data: result.rows || [] });
     } catch (err) {
-        res.status(500).json({ error: "Courses load nahi ho sakay." });
+        res.status(500).json({ success: false, error: "Courses load nahi ho sakay." });
     }
 });
 
-router.post('/courses/add', async (req, res) => {
-    const { title, description, teacher_id } = req.body;
-    if (!title || !teacher_id) return res.status(400).json({ error: "Title aur Teacher ID lazmi hain." });
+router.post('/courses/add', verifyToken, async (req, res) => {
+    const { title, description } = req.body;
+    const teacher_id = req.user.id; // User ID manually bhejne ki zaroorat nahi
+
+    if (!title) return res.status(400).json({ error: "Title lazmi hai." });
 
     try {
         const result = await pool.query(
@@ -62,45 +71,46 @@ router.post('/courses/add', async (req, res) => {
     }
 });
 
-router.put('/courses/:id', async (req, res) => {
+router.put('/courses/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
     const { title, description } = req.body;
+    const teacherId = req.user.id;
+
     try {
+        // Sirf wahi teacher update kar sake jis ka course hai
         const result = await pool.query(
-            "UPDATE courses SET title = $1, description = $2 WHERE id = $3 RETURNING *",
-            [title, description, id]
+            "UPDATE courses SET title = $1, description = $2 WHERE id = $3 AND teacher_id = $4 RETURNING *",
+            [title, description, id, teacherId]
         );
-        if (result.rowCount === 0) return res.status(404).json({ error: "Course nahi mila." });
+        if (result.rowCount === 0) return res.status(404).json({ error: "Course nahi mila ya ijazat nahi." });
         res.json({ success: true, course: result.rows[0] });
     } catch (err) {
         res.status(500).json({ error: "Update process fail ho gaya." });
     }
 });
 
-router.delete('/courses/:id', async (req, res) => {
+router.delete('/courses/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
+    const teacherId = req.user.id;
     try {
-        // Pehle attendance/enrollment delete karni par sakti hai agar schema restrict hai
-        // Filhal direct delete:
-        const result = await pool.query("DELETE FROM courses WHERE id = $1", [id]);
-        if (result.rowCount === 0) return res.status(404).json({ error: "Course pehle hi delete ho chuka hai." });
+        const result = await pool.query("DELETE FROM courses WHERE id = $1 AND teacher_id = $2", [id, teacherId]);
+        if (result.rowCount === 0) return res.status(404).json({ error: "Delete fail: Course nahi mila." });
         res.json({ success: true, message: "Deleted successfully from Lahore Portal." });
     } catch (err) {
-        console.error("Delete Error:", err.message);
-        res.status(500).json({ error: "Delete fail: Is course mein students enrolled ho saktay hain." });
+        res.status(500).json({ error: "Delete fail: Is course mein data ho sakta hai." });
     }
 });
 
-// --- 3. ATTENDANCE & STUDENTS ---
-router.get('/students', async (req, res) => {
+// --- 3. ATTENDANCE & STUDENTS (Protected) ---
+router.get('/students', verifyToken, async (req, res) => {
     try {
         const result = await pool.query('SELECT id, name, email FROM users WHERE LOWER(role) = \'student\' ORDER BY name ASC');
-        res.json(result.rows || []);
+        res.json({ success: true, data: result.rows || [] });
     } catch (err) {
         res.status(500).json({ success: false, error: "Students list load nahi ho saki." });
     }
 });
 
-router.post('/attendance/mark', teacherController.markAttendance);
+router.post('/attendance/mark', verifyToken, teacherController.markAttendance);
 
 export default router;
