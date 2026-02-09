@@ -3,7 +3,7 @@ const router = express.Router();
 import pool from '../config/db.js';
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
-import bcrypt from 'bcryptjs'; // Password security ke liye
+import bcrypt from 'bcryptjs';
 
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -17,7 +17,7 @@ const upload = multer({ storage });
 // 1. Image Upload to Cloudinary
 router.post('/upload-image', upload.single('file'), async (req, res) => {
     try {
-        if (!req.file) return res.status(400).json({ error: "File upload fail hui!" });
+        if (!req.file) return res.status(400).json({ success: false, error: "File upload fail hui!" });
 
         const fileBase64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
         
@@ -25,14 +25,14 @@ router.post('/upload-image', upload.single('file'), async (req, res) => {
             folder: "lahore_portal_users",
         });
 
-        res.json({ url: result.secure_url }); 
+        res.json({ success: true, url: result.secure_url }); 
     } catch (err) {
         console.error("Cloudinary Error:", err);
-        res.status(500).json({ error: "Cloudinary upload fail ho gaya." });
+        res.status(500).json({ success: false, error: "Cloudinary upload fail ho gaya." });
     }
 });
 
-// 2. Admin Stats
+// 2. Admin Stats (Fixed for Frontend compatibility)
 router.get('/stats', async (req, res) => {
     try {
         const query = `
@@ -43,13 +43,18 @@ router.get('/stats', async (req, res) => {
         `;
         const stats = await pool.query(query);
         
+        // Success wrapper add kiya hai taake frontend fetch handle kar sake
         res.json({
-            teachers: parseInt(stats.rows[0].teachers),
-            students: parseInt(stats.rows[0].students),
-            subjects: parseInt(stats.rows[0].subjects)
+            success: true,
+            data: {
+                teachers: parseInt(stats.rows[0].teachers) || 0,
+                students: parseInt(stats.rows[0].students) || 0,
+                subjects: parseInt(stats.rows[0].subjects) || 0
+            }
         });
     } catch (err) {
-        res.status(500).json({ error: "Stats load nahi ho sakay." });
+        console.error("Stats Error:", err);
+        res.status(500).json({ success: false, error: "Stats load nahi ho sakay." });
     }
 });
 
@@ -68,9 +73,9 @@ router.get('/users', async (req, res) => {
         queryText += " ORDER BY id DESC";
 
         const users = await pool.query(queryText, queryParams);
-        res.json(users.rows);
+        res.json({ success: true, data: users.rows });
     } catch (err) {
-        res.status(500).json({ error: "User search error in Lahore DB." });
+        res.status(500).json({ success: false, error: "User search error in Lahore DB." });
     }
 });
 
@@ -78,7 +83,6 @@ router.get('/users', async (req, res) => {
 router.post('/users', async (req, res) => {
     const { name, email, role, password, profile_pic } = req.body;
     try {
-        // ✅ SECURE: Password hashing
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password || 'lahore123', salt);
 
@@ -86,10 +90,10 @@ router.post('/users', async (req, res) => {
             "INSERT INTO users (name, email, role, password, profile_pic, is_approved) VALUES ($1, $2, $3, $4, $5, true) RETURNING id, name, email, role",
             [name, email, role, hashedPassword, profile_pic]
         );
-        res.status(201).json(newUser.rows[0]);
+        res.status(201).json({ success: true, data: newUser.rows[0] });
     } catch (err) {
         console.error("CREATE ERROR:", err.message);
-        res.status(500).json({ error: "Email pehle se maujood hai!" });
+        res.status(500).json({ success: false, error: "Email pehle se maujood hai!" });
     }
 });
 
@@ -103,11 +107,11 @@ router.put('/users/:id', async (req, res) => {
             [name, email, role, profile_pic, id]
         );
         
-        if (result.rowCount === 0) return res.status(404).json({ error: "User nahi mila." });
+        if (result.rowCount === 0) return res.status(404).json({ success: false, error: "User nahi mila." });
         
         res.json({ success: true, message: "Lahore Database updated!" });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
@@ -116,10 +120,10 @@ router.delete('/users/:id', async (req, res) => {
     const { id } = req.params;
     try {
         const result = await pool.query("DELETE FROM users WHERE id = $1", [id]);
-        if (result.rowCount === 0) return res.status(404).json({ error: "User missing." });
+        if (result.rowCount === 0) return res.status(404).json({ success: false, error: "User missing." });
         res.json({ success: true, message: "User deleted successfully." });
     } catch (err) {
-        res.status(500).json({ error: "Delete fail: User kisi record se linked ho sakta hai." });
+        res.status(500).json({ success: false, error: "Delete fail: User kisi record se linked ho sakta hai." });
     }
 });
 
