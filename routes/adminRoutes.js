@@ -5,7 +5,7 @@ import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
 // Pehle middleware file banayein phir yahan import karein
-import { verifyToken } from '../middleware/auth.js'; 
+import { verifyToken } from '../middleware/authMiddleware.js'; 
 
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
