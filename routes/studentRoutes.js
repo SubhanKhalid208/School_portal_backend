@@ -7,9 +7,11 @@ import { verifyToken } from '../middleware/authMiddleware.js';
 import { sendWelcomeEmail } from '../controllers/authController.js'; 
 
 const router = express.Router();
-const upload = multer({ dest: 'uploads/' });
 
-// --- 1. BULK UPLOAD (Optimized with Database Transactions) ---
+// Production (Railway) ke liye /tmp folder behtar hai
+const upload = multer({ dest: '/tmp/' });
+
+// --- 1. BULK UPLOAD (Optimized & Robust) ---
 router.post('/bulk-upload', verifyToken, upload.single('file'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ success: false, error: "CSV file upload karna lazmi hai!" });
@@ -18,20 +20,33 @@ router.post('/bulk-upload', verifyToken, upload.single('file'), async (req, res)
     const students = [];
     const filePath = req.file.path;
 
+    // File ko stream ke zariye parhna
     fs.createReadStream(filePath)
         .pipe(csv())
-        .on('data', (data) => students.push(data))
+        .on('data', (data) => {
+            // Check karein ke row khali toh nahi
+            if (data.email) students.push(data);
+        })
+        .on('error', (err) => {
+            console.error("CSV Parsing Error:", err.message);
+            res.status(500).json({ success: false, error: "CSV file format sahi nahi hai." });
+        })
         .on('end', async () => {
-            const client = await pool.connect(); // Use a single client for transaction
+            if (students.length === 0) {
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                return res.status(400).json({ success: false, error: "CSV file khali hai ya emails missing hain!" });
+            }
+
+            const client = await pool.connect(); 
             try {
-                await client.query('BEGIN'); // Transaction start karein
+                await client.query('BEGIN'); 
                 let count = 0;
 
                 for (const student of students) {
                     const { email, dob, name } = student;
-                    if (!email) continue;
                     const cleanEmail = email.trim().toLowerCase();
 
+                    // Duplicate check
                     const checkUser = await client.query("SELECT id FROM users WHERE email = $1", [cleanEmail]);
                     
                     if (checkUser.rows.length === 0) {
@@ -43,28 +58,32 @@ router.post('/bulk-upload', verifyToken, upload.single('file'), async (req, res)
                         
                         const newUserId = insertResult.rows[0].id;
 
-                        // ✅ Auto-enrollment in all courses
+                        // ✅ Safer Auto-enrollment (Check if courses exist)
                         await client.query(
-                            'INSERT INTO student_courses (student_id, course_id) SELECT $1, id FROM courses',
+                            'INSERT INTO student_courses (student_id, course_id) SELECT $1, id FROM courses ON CONFLICT DO NOTHING',
                             [newUserId]
                         );
 
-                        // Email async bhejien taake loop slow na ho
-                        sendWelcomeEmail(cleanEmail, newUserId).catch(e => console.error("Mail Error:", e.message));
+                        // Email async bhejien (Non-blocking)
+                        if (typeof sendWelcomeEmail === 'function') {
+                            sendWelcomeEmail(cleanEmail, newUserId).catch(e => console.error("Mail Error:", e.message));
+                        }
                         
                         count++;
                     }
                 }
                 
-                await client.query('COMMIT'); // Sab sahi raha toh save karein
-                res.json({ success: true, message: `Lahore Portal: ${count} students successfully enroll ho gaye!` });
+                await client.query('COMMIT'); 
+                res.json({ success: true, message: `Lahore Portal: ${count} naye students enroll ho gaye!` });
+
             } catch (err) {
-                await client.query('ROLLBACK'); // Masla hua toh sab cancel karein
-                console.error("Bulk Upload Error:", err);
-                res.status(500).json({ success: false, error: "Database error during upload." });
+                await client.query('ROLLBACK'); 
+                console.error("❌ Bulk Upload Error:", err.message);
+                res.status(500).json({ success: false, error: "Database transaction fail ho gayi: " + err.message });
             } finally {
                 client.release();
-                if (fs.existsSync(filePath)) fs.unlinkSync(filePath); // Delete file always
+                // File hamesha delete karein
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath); 
             }
         });
 });
@@ -88,14 +107,13 @@ router.get('/my-courses/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 3. ATTENDANCE STATS (Optimized Query) ---
+// --- 3. ATTENDANCE STATS ---
 router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     if (!studentId || studentId === 'undefined') {
         return res.status(400).json({ success: false, error: "Student ID missing hai." });
     }
     try {
-        // Ek hi query mein present aur total count
         const statsResult = await pool.query(`
             SELECT 
                 COUNT(*) as total_days,
