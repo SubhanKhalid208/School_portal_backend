@@ -20,16 +20,27 @@ const upload = multer({ storage });
 router.post('/upload-image', verifyToken, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, error: "File missing!" });
+        // Ensure Cloudinary is configured
+        if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+            console.error('Cloudinary not configured. Missing environment variables.');
+            return res.status(500).json({ success: false, error: 'Cloudinary not configured on server.' });
+        }
 
         const fileBase64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+
+        // Use explicit options and resource_type for images
         const result = await cloudinary.uploader.upload(fileBase64, {
             folder: "lahore_portal_users",
+            resource_type: 'image',
+            overwrite: true
         });
 
-        res.json({ success: true, url: result.secure_url }); 
+        res.json({ success: true, url: result.secure_url });
     } catch (err) {
-        console.error("Cloudinary Error:", err);
-        res.status(500).json({ success: false, error: "Cloudinary upload failed." });
+        console.error("Cloudinary Error:", err && err.message ? err.message : err, err);
+        const message = err && err.message ? err.message : 'Cloudinary upload failed.';
+        const code = err && err.code ? err.code : undefined;
+        res.status(500).json({ success: false, error: message, code });
     }
 });
 
