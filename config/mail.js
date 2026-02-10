@@ -1,26 +1,22 @@
 import nodemailer from 'nodemailer';
 
-// Railway variables check karne ke liye logs
-console.log('📧 Email Config Check:');
-console.log('  - EMAIL_USER:', process.env.EMAIL_USER ? '✅ Set' : '❌ NOT SET');
-
 export const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false,
+  service: 'gmail', // Host ki jagah direct service use karein
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS
   },
-  tls: {
-    rejectUnauthorized: false
-  }
+  // Extra security settings
+  pool: true,
+  maxConnections: 1,
+  rateLimit: 1
 });
 
-// Verification check jo server start hote hi chalega
-transporter.verify((error, success) => {
+// Verification ko non-blocking banaya hai taake server crash na ho
+transporter.verify((error) => {
   if (error) {
-    console.error("❌ Email Transporter Error:", error.message);
+    console.log("⚠️ Email System Warning: Connection delayed or blocked.");
+    // Hum yahan process.exit() nahi kar rahe taake server chalta rahe
   } else {
     console.log("✅ Lahore Portal: Email system is ready!");
   }
