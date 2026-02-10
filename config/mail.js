@@ -1,24 +1,6 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 
-console.log('📧 Email Config Check:');
-console.log('  - EMAIL_USER:', process.env.EMAIL_USER ? '✅ Set' : '❌ NOT SET');
-console.log('  - EMAIL_PASS:', process.env.EMAIL_PASS ? '✅ Set' : '❌ NOT SET');
+// Resend ko API Key ke sath initialize karein
+export const resend = new Resend(process.env.RESEND_API_KEY);
 
-export const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465, 
-  secure: true, 
-  auth: {
-    user: process.env.EMAIL_USER, 
-    pass: process.env.EMAIL_PASS  
-  }
-});
-
-transporter.verify((error, success) => {
-  if (error) {
-    console.error("❌ Email Transporter Error:", error.message);
-    console.error("   Full Error:", error);
-  } else {
-    console.log("✅ Lahore Portal: Email server is ready to send messages!");
-  }
-});
+console.log('🚀 Lahore Portal: Resend Email System Initialized.');
