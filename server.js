@@ -17,7 +17,7 @@ import { transporter } from './config/mail.js';
 
 const app = express();
 
-// ✅ 1. PROXY TRUST: Railway aur HTTPS ke liye lazmi hai
+// ✅ 1. PROXY TRUST (Railway/HTTPS Fix)
 app.set('trust proxy', 1);
 
 // ✅ 2. SECURITY
@@ -26,7 +26,7 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 })); 
 
-// ✅ 3. CORS: Vercel aur Localhost dono ke liye
+// ✅ 3. CORS (Vercel Support)
 app.use(cors({
   origin: [
     'http://localhost:3000', 
@@ -40,7 +40,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ 4. SESSION: Cross-Domain Cookies Fix
+// ✅ 4. SESSION (Cookie Fix for Chrome/Vercel)
 app.use(session({
   secret: process.env.SESSION_SECRET || 'lahore_portal_secret_2026',
   resave: false,
@@ -60,21 +60,21 @@ app.use(passport.session());
 passport.serializeUser((user, done) => { done(null, user); });
 passport.deserializeUser((user, done) => { done(null, user); });
 
-// 🕵️ DEBUGGING: Console mein request check karne ke liye
+// 🕵️ DEBUG LOGGING
 app.use((req, res, next) => {
-  console.log(`📡 Request: ${req.method} ${req.url}`);
+  console.log(`📡 Incoming: ${req.method} ${req.url}`);
   next();
 });
 
-// ✅ 5. ROUTES MOUNTING (Frontend compatibility ke liye FIX kiya)
-// Aapka frontend '/admin/stats' bula raha hai, is liye yahan se '/api' hata diya hai
-app.use('/auth', authRoutes); 
-app.use('/courses', courseRoutes); 
-app.use('/teacher', teacherRoutes);
-app.use('/admin', adminRoutes); // Dashboard stats ab yahan hit hongi
-app.use('/student', studentRoutes); 
-app.use('/attendance', attendanceRoutes); 
-app.use('/debug', debugRoutes);
+// ✅ 5. ROUTES MOUNTING (Dono /api aur baghair /api ke raste support karega)
+// Is se Login aur Admin Dashboard dono masle hal ho jayenge
+app.use(['/api/auth', '/auth'], authRoutes); 
+app.use(['/api/admin', '/admin'], adminRoutes); 
+app.use(['/api/courses', '/courses'], courseRoutes); 
+app.use(['/api/teacher', '/teacher'], teacherRoutes);
+app.use(['/api/student', '/student'], studentRoutes); 
+app.use(['/api/attendance', '/attendance'], attendanceRoutes); 
+app.use(['/api/debug', '/debug'], debugRoutes);
 
 // Health Check
 app.get('/', (req, res) => {
