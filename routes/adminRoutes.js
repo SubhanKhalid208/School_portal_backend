@@ -4,9 +4,9 @@ import pool from '../config/db.js';
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
-// Pehle middleware file banayein phir yahan import karein
 import { verifyToken } from '../middleware/authMiddleware.js'; 
 
+// Cloudinary Configuration
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
@@ -16,7 +16,7 @@ cloudinary.config({
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// 1. Image Upload (Protected)
+// --- 1. Image Upload (Protected) ---
 router.post('/upload-image', verifyToken, upload.single('file'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ success: false, error: "File missing!" });
@@ -28,11 +28,12 @@ router.post('/upload-image', verifyToken, upload.single('file'), async (req, res
 
         res.json({ success: true, url: result.secure_url }); 
     } catch (err) {
+        console.error("Cloudinary Error:", err);
         res.status(500).json({ success: false, error: "Cloudinary upload failed." });
     }
 });
 
-// 2. Admin Stats (AB YE PROTECTED HAI - Browser URL se nahi khulega)
+// --- 2. Admin Stats (Fixed for Frontend) ---
 router.get('/stats', verifyToken, async (req, res) => {
     try {
         const query = `
@@ -43,20 +44,22 @@ router.get('/stats', verifyToken, async (req, res) => {
         `;
         const stats = await pool.query(query);
         
+        // Frontend expects: result.success AND result.data
         res.json({
             success: true,
             data: {
-                teachers: parseInt(stats.rows[0].teachers),
-                students: parseInt(stats.rows[0].students),
-                subjects: parseInt(stats.rows[0].subjects)
+                teachers: parseInt(stats.rows[0].teachers) || 0,
+                students: parseInt(stats.rows[0].students) || 0,
+                subjects: parseInt(stats.rows[0].subjects) || 0
             }
         });
     } catch (err) {
+        console.error("Stats Error:", err);
         res.status(500).json({ success: false, error: "Stats load nahi ho sakay." });
     }
 });
 
-// 3. Get All Users (Protected)
+// --- 3. Get All Users (Protected) ---
 router.get('/users', verifyToken, async (req, res) => {
     const { search } = req.query;
     try {
@@ -73,11 +76,12 @@ router.get('/users', verifyToken, async (req, res) => {
         const users = await pool.query(queryText, queryParams);
         res.json({ success: true, data: users.rows });
     } catch (err) {
+        console.error("Fetch Users Error:", err);
         res.status(500).json({ success: false, error: "User fetch error." });
     }
 });
 
-// 4. Create User (Secure & Protected)
+// --- 4. Create User (Secure & Protected) ---
 router.post('/users', verifyToken, async (req, res) => {
     const { name, email, role, password, profile_pic } = req.body;
     try {
@@ -90,11 +94,12 @@ router.post('/users', verifyToken, async (req, res) => {
         );
         res.status(201).json({ success: true, data: newUser.rows[0] });
     } catch (err) {
-        res.status(500).json({ success: false, error: "Email pehle se maujood hai!" });
+        console.error("Create User Error:", err);
+        res.status(500).json({ success: false, error: "Email pehle se maujood hai ya server error." });
     }
 });
 
-// 5. Update User (Protected)
+// --- 5. Update User (Protected) ---
 router.put('/users/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
     const { name, email, role, profile_pic } = req.body;
@@ -107,11 +112,12 @@ router.put('/users/:id', verifyToken, async (req, res) => {
         if (result.rowCount === 0) return res.status(404).json({ success: false, error: "User nahi mila." });
         res.json({ success: true, message: "User updated!" });
     } catch (err) {
+        console.error("Update Error:", err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
 
-// 6. Delete User (Protected)
+// --- 6. Delete User (Protected) ---
 router.delete('/users/:id', verifyToken, async (req, res) => {
     const { id } = req.params;
     try {
@@ -119,6 +125,7 @@ router.delete('/users/:id', verifyToken, async (req, res) => {
         if (result.rowCount === 0) return res.status(404).json({ success: false, error: "User missing." });
         res.json({ success: true, message: "User deleted." });
     } catch (err) {
+        console.error("Delete Error:", err);
         res.status(500).json({ success: false, error: "Delete fail: Record linked ho sakta hai." });
     }
 });

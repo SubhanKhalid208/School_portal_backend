@@ -1,18 +1,22 @@
 import pool from '../config/db.js';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs'; // Changed to bcryptjs for better stability
 import { transporter } from '../config/mail.js';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
+// --- 1. Send Welcome Email (Dynamic Link Fix) ---
 export const sendWelcomeEmail = async (userEmail, userId) => {
     const token = jwt.sign(
         { id: userId }, 
         process.env.JWT_SECRET || 'lahore_portal_secret', 
         { expiresIn: '24h' }
     );
-    const setupLink = `http://localhost:3000/reset-password?token=${token}`;
+    
+    // Check if we are on production or local for the email link
+    const frontendURL = process.env.FRONTEND_URL || "http://localhost:3000";
+    const setupLink = `${frontendURL}/reset-password?token=${token}`;
 
     try {
         await transporter.verify();
@@ -21,8 +25,6 @@ export const sendWelcomeEmail = async (userEmail, userId) => {
         console.error('❌ Mail transporter verify failed:', verifyErr.message);
         throw verifyErr;
     }
-
-    console.log(`✉️ Preparing to send welcome email to: ${userEmail}`);
 
     const mailOptions = {
         from: `"Lahore Education Portal" <${process.env.EMAIL_USER}>`,
@@ -45,22 +47,23 @@ export const sendWelcomeEmail = async (userEmail, userId) => {
 
     try {
         const result = await transporter.sendMail(mailOptions);
-        console.log(`Email successfully sent to ${userEmail}`);
+        console.log(`✅ Email successfully sent to ${userEmail}`);
         return result;
     } catch (error) {
-        console.error(`Nodemailer Error for ${userEmail}:`, error.message, error.response || '');
+        console.error(`❌ Nodemailer Error for ${userEmail}:`, error.message);
         throw error;
     }
 };
 
+// --- 2. Get Users (Admin Search Fix) ---
 export const getUsers = async (req, res) => {
     const { search } = req.query;
     try {
-        let queryText = "SELECT id, email, role, is_approved FROM users";
+        let queryText = "SELECT id, name, email, role, is_approved, profile_pic FROM users";
         let queryParams = [];
 
         if (search) {
-            queryText += " WHERE email ILIKE $1 OR name ILIKE $1"; 
+            queryText += " WHERE (email ILIKE $1 OR name ILIKE $1)"; 
             queryParams.push(`%${search}%`);
         }
 
@@ -72,14 +75,15 @@ export const getUsers = async (req, res) => {
     }
 };
 
+// --- 3. Reset/Set Password (Production Salt Fix) ---
 export const resetPassword = async (req, res) => {
     const { token, password } = req.body;
-
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET || 'lahore_portal_secret');
         const userId = decoded.id;
 
-        const hashedPassword = await bcrypt.hash(password, 10);
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
 
         await pool.query(
             "UPDATE users SET password = $1 WHERE id = $2",
@@ -93,6 +97,7 @@ export const resetPassword = async (req, res) => {
     }
 };
 
+// --- 4. Login (Optimized for Frontend Redirects) ---
 export const login = async (req, res) => {
     const { email, password } = req.body;
     try {
@@ -105,7 +110,7 @@ export const login = async (req, res) => {
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(401).json({ error: "Password ghalat hai!" });
 
-        if (!user.is_approved) return res.status(403).json({ error: "Aapka account pending hai!" });
+        if (!user.is_approved) return res.status(403).json({ error: "Aapka account abhi pending hai!" });
 
         const token = jwt.sign(
             { id: user.id, role: user.role }, 
@@ -113,22 +118,23 @@ export const login = async (req, res) => {
             { expiresIn: '1d' }
         );
 
-        // ✅ Production Fix: Cookie settings ko simple rakhein ya sirf JSON bhejien
-        // Agar Vercel/Railway pe cookies masla karein, to sirf token bhej dena kafi hai
+        // Production-friendly Cookie settings
         res.cookie('token', token, {
             httpOnly: true, 
-            secure: true,   // Railway/Vercel (HTTPS) ke liye true hona chahiye
-            sameSite: 'none', // Cross-site requests ke liye 'none' zaroori hai
+            secure: true,   // Required for Railway/HTTPS
+            sameSite: 'none', 
             path: '/',       
             maxAge: 24 * 60 * 60 * 1000 
         });
 
-        // ✅ Yeh response lazmi hai taake frontend ko data mil sake
+        // Returning role and userId directly for frontend router.push logic
         return res.status(200).json({ 
             success: true,
             message: "Login Successful!",
             token, 
-            user: { id: user.id, email: user.email, role: user.role } 
+            role: user.role,
+            userId: user.id,
+            user: { id: user.id, name: user.name, email: user.email, role: user.role } 
         });
 
     } catch (err) {
@@ -137,48 +143,35 @@ export const login = async (req, res) => {
     }
 };
 
+// --- 5. Signup ---
 export const signup = async (req, res) => {
     const { email, dob, role, name } = req.body; 
     try {
-        // Email validation
         if (!email || !email.includes('@')) {
             return res.status(400).json({ error: "Valid email zaroori hai!" });
         }
 
         const cleanEmail = email.trim().toLowerCase();
-        
-        // Check if user already exists
         const userExists = await pool.query("SELECT * FROM users WHERE email = $1", [cleanEmail]);
+        
         if (userExists.rows.length > 0) {
             return res.status(400).json({ error: "Yeh email pehle se register hai!" }); 
         }
 
-        // Insert new student - password will be set later via email link
         const newUser = await pool.query(
-            `INSERT INTO users (name, email, role, is_approved, dob, profile_pic, password) 
-             VALUES ($1, $2, $3, $4, $5, $6, $7) 
-             RETURNING id, name, email, role, is_approved`,
-            [
-                name || 'Student', 
-                cleanEmail, 
-                role || 'student', 
-                true,  // Auto-approve student registrations
-                dob || null, 
-                null,  // Profile pic - can be added later
-                null   // Password - will be set via email link
-            ]
+            `INSERT INTO users (name, email, role, is_approved, dob, password) 
+             VALUES ($1, $2, $3, $4, $5, $6) 
+             RETURNING id, name, email, role`,
+            [name || 'Student', cleanEmail, role || 'student', true, dob || null, null]
         );
 
         const newUserId = newUser.rows[0].id;
-        console.log(`✅ New student registered: ${cleanEmail} (ID: ${newUserId})`);
+        console.log(`✅ New student registered: ${cleanEmail}`);
 
-        // Send welcome email with password setup link
         try {
             await sendWelcomeEmail(cleanEmail, newUserId);
-            console.log(`✅ Welcome email sent to: ${cleanEmail}`);
         } catch (emailErr) {
             console.error(`⚠️ Email failed for ${cleanEmail}:`, emailErr.message);
-            // Don't fail the registration if email fails, just log it
         }
 
         res.status(201).json({ 
