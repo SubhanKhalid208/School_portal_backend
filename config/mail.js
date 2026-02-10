@@ -1,13 +1,24 @@
 import nodemailer from 'nodemailer';
 
-// Simple initialization without any blocking calls or heavy logs
+console.log('📧 Email Config Check:');
+console.log('  - EMAIL_USER:', process.env.EMAIL_USER ? '✅ Set' : '❌ NOT SET');
+console.log('  - EMAIL_PASS:', process.env.EMAIL_PASS ? '✅ Set' : '❌ NOT SET');
+
 export const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: "smtp.gmail.com",
+  port: 465, 
+  secure: true, 
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    user: process.env.EMAIL_USER, 
+    pass: process.env.EMAIL_PASS  
   }
 });
 
-// Just a simple startup confirmation
-console.log('🚀 Lahore Portal: Email service initialized.');
+transporter.verify((error, success) => {
+  if (error) {
+    console.error("❌ Email Transporter Error:", error.message);
+    console.error("   Full Error:", error);
+  } else {
+    console.log("✅ Lahore Portal: Email server is ready to send messages!");
+  }
+});
