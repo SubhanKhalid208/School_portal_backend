@@ -1,12 +1,11 @@
 import pool from '../config/db.js';
-import bcrypt from 'bcryptjs'; // Changed to bcryptjs for better stability
+import bcrypt from 'bcryptjs'; 
 import { transporter } from '../config/mail.js';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-// --- 1. Send Welcome Email (Dynamic Link Fix) ---
 export const sendWelcomeEmail = async (userEmail, userId) => {
     const token = jwt.sign(
         { id: userId }, 
@@ -25,7 +24,7 @@ export const sendWelcomeEmail = async (userEmail, userId) => {
         console.error('❌ Mail transporter verify failed:', verifyErr.message);
         throw verifyErr;
     }
-
+   
     const mailOptions = {
         from: `"Lahore Education Portal" <${process.env.EMAIL_USER}>`,
         to: userEmail,
@@ -63,7 +62,6 @@ export const sendWelcomeEmail = async (userEmail, userId) => {
     }
 };
 
-// --- 2. Get Users (Admin Search Fix) ---
 export const getUsers = async (req, res) => {
     const { search } = req.query;
     try {
@@ -93,7 +91,7 @@ export const resetPassword = async (req, res) => {
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        await pool.query(
+        await pool.query( 
             "UPDATE users SET password = $1 WHERE id = $2",
             [hashedPassword, userId]
         );
