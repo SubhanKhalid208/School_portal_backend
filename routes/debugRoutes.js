@@ -1,11 +1,56 @@
 import express from 'express';
 import { sendWelcomeEmail } from '../controllers/authController.js';
+import { transporter } from '../config/mail.js';
 
 const router = express.Router();
 
 /**
+ * CHECK EMAIL CONFIGURATION
+ * Use: /api/debug/check-email-config
+ */
+router.get('/check-email-config', async (req, res) => {
+  try {
+    console.log('🔍 Checking Email Configuration...');
+    
+    const config = {
+      EMAIL_USER: process.env.EMAIL_USER ? '✅ Set' : '❌ NOT SET',
+      EMAIL_PASS: process.env.EMAIL_PASS ? '✅ Set' : '❌ NOT SET',
+      SMTP_HOST: 'smtp.gmail.com',
+      SMTP_PORT: 465,
+      EMAIL_ACCOUNT: process.env.EMAIL_USER || 'NOT CONFIGURED'
+    };
+
+    console.log('Configuration:', config);
+
+    // Try to verify transporter
+    const verified = await new Promise((resolve) => {
+      transporter.verify((error, success) => {
+        if (error) {
+          console.error('❌ Transporter verification failed:', error);
+          resolve({ connected: false, error: error.message });
+        } else {
+          console.log('✅ Transporter verification successful');
+          resolve({ connected: true, message: 'Email service is ready' });
+        }
+      });
+    });
+
+    res.json({
+      success: true,
+      config: config,
+      transporter_status: verified,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (err) {
+    console.error('Error checking configuration:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * TEST EMAIL ROUTE
- * Use: /api/email/send-test-email?email=user@example.com&key=ADMIN_SECRET
+ * Use: /api/debug/send-test-email?email=user@example.com&key=ADMIN_SECRET
  */
 router.get('/send-test-email', async (req, res) => {
   const { email, key } = req.query;
@@ -41,6 +86,8 @@ router.get('/send-test-email', async (req, res) => {
       success: false, 
       error: 'Email sending failed',
       details: err.message,
+      code: err.code,
+      command: err.command,
       // Railway/Production environment check
       env: process.env.NODE_ENV 
     });

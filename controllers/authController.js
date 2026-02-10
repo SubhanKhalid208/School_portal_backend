@@ -20,7 +20,7 @@ export const sendWelcomeEmail = async (userEmail, userId) => {
 
     try {
         await transporter.verify();
-        console.log('✅ Mail transporter verified.');
+        console.log('✅ Mail transporter verified for sending email.');
     } catch (verifyErr) {
         console.error('❌ Mail transporter verify failed:', verifyErr.message);
         throw verifyErr;
@@ -46,11 +46,19 @@ export const sendWelcomeEmail = async (userEmail, userId) => {
     };
 
     try {
+        console.log(`📧 Attempting to send email to ${userEmail}...`);
+        console.log(`   From: ${process.env.EMAIL_USER}`);
+        console.log(`   Subject: ${mailOptions.subject}`);
+        
         const result = await transporter.sendMail(mailOptions);
         console.log(`✅ Email successfully sent to ${userEmail}`);
+        console.log(`   Message ID: ${result.messageId}`);
         return result;
     } catch (error) {
         console.error(`❌ Nodemailer Error for ${userEmail}:`, error.message);
+        console.error(`   Error Code: ${error.code}`);
+        console.error(`   Error Command: ${error.command}`);
+        console.error(`   Full Error:`, error);
         throw error;
     }
 };
