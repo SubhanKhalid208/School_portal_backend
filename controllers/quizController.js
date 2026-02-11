@@ -1,10 +1,54 @@
-// ✅ 1. Submit Quiz & Generate Result
+import pool from '../config/db.js';
+
+// 1. Teacher: Create a New Quiz
+export const teacherCreateQuiz = async (req, res) => {
+    const { title, description, passing_marks, questions } = req.body;
+    const teacherId = req.user.id;
+
+    try {
+        const totalMarks = questions.reduce((sum, q) => sum + parseInt(q.marks), 0);
+        
+        // Save Quiz
+        const quizRes = await pool.query(
+            "INSERT INTO quizzes (title, description, total_marks, passing_marks, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+            [title, description, totalMarks, passing_marks, teacherId]
+        );
+        const quizId = quizRes.rows[0].id;
+
+        // Save Questions
+        for (const q of questions) {
+            await pool.query(
+                "INSERT INTO questions (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_option, marks) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                [quizId, q.question_text, q.option_a, q.option_b, q.option_c, q.option_d, q.correct_option, q.marks]
+            );
+        }
+
+        res.json({ success: true, message: "Quiz successfully created!", quizId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// 2. Teacher: Assign Quiz to Student
+export const assignToStudent = async (req, res) => {
+    const { quiz_id, student_id } = req.body;
+    try {
+        await pool.query(
+            "INSERT INTO quiz_assignments (quiz_id, student_id) VALUES ($1, $2)",
+            [quiz_id, student_id]
+        );
+        res.json({ success: true, message: "Quiz assigned successfully!" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// 3. Student: Submit Quiz & Generate Result
 export const submitQuiz = async (req, res) => {
     const { assignment_id, answers } = req.body; 
     const studentId = req.user.id;
 
     try {
-        // Double submission check
         const alreadySubmitted = await pool.query(
             "SELECT id FROM quiz_results WHERE assignment_id = $1 AND student_id = $2",
             [assignment_id, studentId]
@@ -14,7 +58,6 @@ export const submitQuiz = async (req, res) => {
             return res.status(400).json({ error: "Aap ye quiz pehle hi submit kar chuke hain!" });
         }
 
-        // Fetch correct answers for comparison
         const questionsRes = await pool.query(
             `SELECT id, correct_option, marks FROM questions WHERE quiz_id = 
             (SELECT quiz_id FROM quiz_assignments WHERE id = $1)`, [assignment_id]
@@ -31,7 +74,6 @@ export const submitQuiz = async (req, res) => {
             }
         });
 
-        // Get passing marks threshold
         const quizInfo = await pool.query(
             "SELECT passing_marks FROM quizzes WHERE id = (SELECT quiz_id FROM quiz_assignments WHERE id = $1)", 
             [assignment_id]
@@ -39,44 +81,30 @@ export const submitQuiz = async (req, res) => {
         
         const status = score >= quizInfo.rows[0].passing_marks ? 'PASS' : 'FAIL';
 
-        // Save final result
         await pool.query(
             `INSERT INTO quiz_results (assignment_id, student_id, score, total_marks, status) 
              VALUES ($1, $2, $3, $4, $5)`,
             [assignment_id, studentId, score, totalMarks, status]
         );
 
-        // Update assignment status
         await pool.query("UPDATE quiz_assignments SET is_completed = TRUE WHERE id = $1", [assignment_id]);
 
         res.json({ success: true, score, status, totalMarks });
     } catch (err) {
-        console.error("Quiz Submission Error:", err);
-        res.status(500).json({ error: "Submission fail ho gayi: " + err.message });
+        res.status(500).json({ error: "Submission fail: " + err.message });
     }
 };
 
-// ✅ 2. Get Student's Assigned Quizzes
+// 4. Student: Get Assigned Quizzes
 export const getStudentQuizzes = async (req, res) => {
     const studentId = req.user.id;
-
     try {
         const query = `
-            SELECT 
-                qa.id AS assignment_id,
-                q.title,
-                q.description,
-                q.total_marks,
-                q.passing_marks,
-                u.name AS teacher_name,
-                qa.is_completed,
-                qa.assigned_at
+            SELECT qa.id AS assignment_id, q.title, q.description, q.total_marks, u.name AS teacher_name, qa.is_completed, qa.assigned_at
             FROM quiz_assignments qa
             JOIN quizzes q ON qa.quiz_id = q.id
             JOIN users u ON q.created_by = u.id
-            WHERE qa.student_id = $1
-            ORDER BY qa.assigned_at DESC
-        `;
+            WHERE qa.student_id = $1 ORDER BY qa.assigned_at DESC`;
         const result = await pool.query(query, [studentId]);
         res.json(result.rows);
     } catch (err) {
@@ -84,61 +112,44 @@ export const getStudentQuizzes = async (req, res) => {
     }
 };
 
-// ✅ 3. Get Questions for a Specific Quiz
+// 5. Student: Get Questions
 export const getQuizQuestions = async (req, res) => {
     const { assignment_id } = req.params;
     const studentId = req.user.id;
-
     try {
         const assignmentCheck = await pool.query(
             "SELECT quiz_id, is_completed FROM quiz_assignments WHERE id = $1 AND student_id = $2",
             [assignment_id, studentId]
         );
-
-        if (assignmentCheck.rows.length === 0) {
-            return res.status(403).json({ error: "Unauthorized access!" });
+        if (assignmentCheck.rows.length === 0 || assignmentCheck.rows[0].is_completed) {
+            return res.status(403).json({ error: "Unauthorized or already completed!" });
         }
-
-        if (assignmentCheck.rows[0].is_completed) {
-            return res.status(400).json({ error: "Quiz already completed." });
-        }
-
-        const quizId = assignmentCheck.rows[0].quiz_id;
         const questions = await pool.query(
             "SELECT id, question_text, option_a, option_b, option_c, option_d, marks FROM questions WHERE quiz_id = $1",
-            [quizId]
+            [assignmentCheck.rows[0].quiz_id]
         );
-
         res.json(questions.rows);
     } catch (err) {
         res.status(500).json({ error: "Questions load nahi ho sakay." });
     }
 };
-// ✅ 4. Specific Result Fetch karne ke liye (Report Card)
+
+// 6. Report Card: Get Result
 export const getQuizResult = async (req, res) => {
     const { assignment_id } = req.params;
     const studentId = req.user.id;
-
     try {
         const result = await pool.query(`
-            SELECT 
-                qr.*, 
-                q.title, 
-                q.passing_marks,
-                u.name as teacher_name
+            SELECT qr.*, q.title, q.passing_marks, u.name as teacher_name
             FROM quiz_results qr
             JOIN quiz_assignments qa ON qr.assignment_id = qa.id
             JOIN quizzes q ON qa.quiz_id = q.id
             JOIN users u ON q.created_by = u.id
             WHERE qr.assignment_id = $1 AND qr.student_id = $2
         `, [assignment_id, studentId]);
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: "Result record nahi mila!" });
-        }
-
+        if (result.rows.length === 0) return res.status(404).json({ error: "Result nahi mila!" });
         res.json(result.rows[0]);
     } catch (err) {
-        res.status(500).json({ error: "Result fetch karne mein error: " + err.message });
+        res.status(500).json({ error: err.message });
     }
 };
