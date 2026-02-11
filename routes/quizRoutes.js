@@ -3,14 +3,37 @@ const router = express.Router();
 import * as quizController from '../controllers/quizController.js';
 import { verifyToken } from '../middleware/authMiddleware.js';
 
-// Teacher Routes
+// ==========================================
+// 👨‍🏫 TEACHER ROUTES
+// ==========================================
+
+// Quiz create karne ke liye
 router.post('/teacher/create', verifyToken, quizController.teacherCreateQuiz);
+
+// Student ko quiz assign karne ke liye
 router.post('/teacher/assign', verifyToken, quizController.assignToStudent);
 
-// Student Routes
+// Teacher ko apne saare banaye huay quizzes dikhane ke liye
+router.get('/teacher/all-quizzes', verifyToken, quizController.getAllQuizzes);
+
+// ✅ IMPORTANT: Teacher ko students ke results dikhane ke liye (Ye missing tha)
+router.get('/teacher/results/:quiz_id', verifyToken, quizController.getTeacherQuizResults);
+
+
+// ==========================================
+// 👨‍🎓 STUDENT ROUTES
+// ==========================================
+
+// Student ko apne assigned quizzes dikhane ke liye
 router.get('/student/my-quizzes', verifyToken, quizController.getStudentQuizzes);
-router.get('/questions/:assignment_id', verifyToken, quizController.getQuizQuestions); // Ye bhi zaroori hai
+
+// Quiz attempt karte waqt questions mangwane ke liye
+router.get('/questions/:assignment_id', verifyToken, quizController.getQuizQuestions);
+
+// Quiz submit karne ke liye
 router.post('/student/submit', verifyToken, quizController.submitQuiz);
-router.get('/result/:assignment_id', verifyToken, quizController.getQuizResult); // Result/Report card ke liye
-router.get('/all', verifyToken, quizController.getAllQuizzes);
+
+// Individual result/report card dekhne ke liye
+router.get('/result/:assignment_id', verifyToken, quizController.getQuizResult);
+
 export default router;
