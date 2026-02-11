@@ -12,6 +12,7 @@ import teacherRoutes from './routes/teacherRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import attendanceRoutes from './routes/attendanceRoutes.js';
 import studentRoutes from './routes/studentRoutes.js';
+import quizRoutes from './routes/quizRoutes.js'; // ✅ Yahan Import add kiya
 import debugRoutes from './routes/debugRoutes.js';
 import { transporter } from './config/mail.js'; 
 
@@ -66,14 +67,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ 5. ROUTES MOUNTING (Dono /api aur baghair /api ke raste support karega)
-// Is se Login aur Admin Dashboard dono masle hal ho jayenge
+// ✅ 5. ROUTES MOUNTING
 app.use(['/api/auth', '/auth'], authRoutes); 
 app.use(['/api/admin', '/admin'], adminRoutes); 
 app.use(['/api/courses', '/courses'], courseRoutes); 
 app.use(['/api/teacher', '/teacher'], teacherRoutes);
 app.use(['/api/student', '/student'], studentRoutes); 
 app.use(['/api/attendance', '/attendance'], attendanceRoutes); 
+app.use(['/api/quiz', '/quiz'], quizRoutes); // ✅ YAHAN MOUNT KIYA (Ye missing tha)
 app.use(['/api/debug', '/debug'], debugRoutes);
 
 // Health Check
