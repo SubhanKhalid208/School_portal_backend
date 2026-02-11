@@ -43,12 +43,13 @@ if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
     ));
 }
 
-// Routes
+// ✅ Standard Auth Routes
 router.post('/login', authController.login);
 router.post('/signup', authController.signup);
 router.post('/reset-password', authController.resetPassword);
 router.get('/users', verifyToken, authController.getUsers); 
 
+// ✅ Google OAuth Routes
 router.get('/google', passport.authenticate('google', { 
     scope: ['profile', 'email'],
     prompt: 'select_account' 
@@ -72,23 +73,24 @@ router.get('/google/callback', (req, res, next) => {
                 maxAge: 24 * 60 * 60 * 1000 
             };
 
-            // Set essential cookies for frontend
+            // Essential cookies for frontend
             res.cookie('role', user.role, cookieOptions);
             res.cookie('userId', user.id.toString(), cookieOptions);
-            res.cookie('userName', user.name, cookieOptions); // Added for dashboard greeting
+            res.cookie('userName', user.name, cookieOptions);
 
-            // ✅ ROUTE FIX: Lahore Portal dashboard paths
+            // ✅ ROUTE FIX: Lahore Portal dashboard paths optimized
             let redirectPath = '/dashboard';
+            
             if (user.role === 'admin') {
                 redirectPath = '/admin';
             } else if (user.role === 'teacher') {
                 redirectPath = '/teacher';
-            } else {
-                // Ensure this matches your frontend folder structure
-                // If using dynamic student folder: /dashboard/student/[id]
-                redirectPath = `/dashboard/student/`; 
+            } else if (user.role === 'student') {
+                // ✅ Dynamic Student Path: dashboard/student/[id]
+                redirectPath = `/dashboard/student/${user.id}`; 
             }
             
+            console.log(`✅ Google Login Success: Redirecting to ${redirectPath}`);
             return res.redirect(`${CLIENT_URL}${redirectPath}`);
         });
     })(req, res, next);
