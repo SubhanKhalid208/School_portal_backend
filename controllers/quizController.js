@@ -44,11 +44,13 @@ export const assignToStudent = async (req, res) => {
 };
 
 // 3. Student: Submit Quiz & Generate Result
+// 3. Student: Submit Quiz & Generate Result
 export const submitQuiz = async (req, res) => {
     const { assignment_id, answers } = req.body; 
     const studentId = req.user.id;
 
     try {
+        // 1. Check if already submitted
         const alreadySubmitted = await pool.query(
             "SELECT id FROM quiz_results WHERE assignment_id = $1 AND student_id = $2",
             [assignment_id, studentId]
@@ -58,6 +60,7 @@ export const submitQuiz = async (req, res) => {
             return res.status(400).json({ error: "Aap ye quiz pehle hi submit kar chuke hain!" });
         }
 
+        // 2. Fetch correct answers
         const questionsRes = await pool.query(
             `SELECT id, correct_option, marks FROM questions WHERE quiz_id = 
             (SELECT quiz_id FROM quiz_assignments WHERE id = $1)`, [assignment_id]
@@ -66,49 +69,72 @@ export const submitQuiz = async (req, res) => {
         let score = 0;
         let totalMarks = 0;
 
+        // 3. Compare Answers
         questionsRes.rows.forEach(q => {
-            totalMarks += q.marks;
-            const studentAns = answers.find(a => a.question_id === q.id);
-            if (studentAns && studentAns.selected === q.correct_option) {
-                score += q.marks;
+            totalMarks += parseInt(q.marks);
+            
+            // ✅ YAHAN CHANGE KIYA HAI: parseInt dono taraf lagaya hai taake match pakka ho
+            const studentAns = answers.find(a => parseInt(a.question_id) === parseInt(q.id));
+            
+            // Trim aur UpperCase taake 'a' aur 'A' ka masla na ho
+            if (studentAns && studentAns.selected.trim().toUpperCase() === q.correct_option.trim().toUpperCase()) {
+                score += parseInt(q.marks);
             }
         });
 
+        // 4. Get passing marks
         const quizInfo = await pool.query(
             "SELECT passing_marks FROM quizzes WHERE id = (SELECT quiz_id FROM quiz_assignments WHERE id = $1)", 
             [assignment_id]
         );
         
-        const status = score >= quizInfo.rows[0].passing_marks ? 'PASS' : 'FAIL';
+        const passingMarks = quizInfo.rows[0]?.passing_marks || 0;
+        const status = score >= passingMarks ? 'PASS' : 'FAIL';
 
+        // 5. Save Result
         await pool.query(
             `INSERT INTO quiz_results (assignment_id, student_id, score, total_marks, status) 
              VALUES ($1, $2, $3, $4, $5)`,
             [assignment_id, studentId, score, totalMarks, status]
         );
 
+        // 6. Mark assignment as completed
         await pool.query("UPDATE quiz_assignments SET is_completed = TRUE WHERE id = $1", [assignment_id]);
 
         res.json({ success: true, score, status, totalMarks });
     } catch (err) {
+        console.error("Submission Error:", err);
         res.status(500).json({ error: "Submission fail: " + err.message });
     }
 };
 
 // 4. Student: Get Assigned Quizzes
+// 4. Student: Get Assigned Quizzes (UPDATED)
 export const getStudentQuizzes = async (req, res) => {
     const studentId = req.user.id;
     try {
         const query = `
-            SELECT qa.id AS assignment_id, q.title, q.description, q.total_marks, u.name AS teacher_name, qa.is_completed, qa.assigned_at
+            SELECT 
+                qa.id AS assignment_id, 
+                q.title, 
+                q.description, 
+                q.total_marks, 
+                u.name AS teacher_name, 
+                qa.is_completed, 
+                qa.assigned_at,
+                qr.score,       -- ✅ Result table se score uthana lazmi hai
+                qr.status
             FROM quiz_assignments qa
             JOIN quizzes q ON qa.quiz_id = q.id
             JOIN users u ON q.created_by = u.id
-            WHERE qa.student_id = $1 ORDER BY qa.assigned_at DESC`;
+            LEFT JOIN quiz_results qr ON qa.id = qr.assignment_id AND qr.student_id = $1 -- ✅ LEFT JOIN taake pending quizzes bhi ayein
+            WHERE qa.student_id = $1 
+            ORDER BY qa.assigned_at DESC`;
+        
         const result = await pool.query(query, [studentId]);
         res.json(result.rows);
     } catch (err) {
-        res.status(500).json({ error: "Quizzes fetch nahi ho sakein." });
+        res.status(500).json({ error: "Quizzes fetch nahi ho sakein: " + err.message });
     }
 };
 
@@ -163,5 +189,32 @@ export const getAllQuizzes = async (req, res) => {
         res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: "Quizzes load nahi ho sakein." });
+    }
+};
+// 7. Teacher: Get All Student Results for a Quiz
+export const getTeacherQuizResults = async (req, res) => {
+    const { quiz_id } = req.params;
+    const teacherId = req.user.id; // Security check
+
+    try {
+        const query = `
+            SELECT 
+                u.name as student_name, 
+                u.email as student_email,
+                qr.score, 
+                qr.total_marks, 
+                qr.status, 
+                qr.submitted_at
+            FROM quiz_results qr
+            JOIN quiz_assignments qa ON qr.assignment_id = qa.id
+            JOIN users u ON qr.student_id = u.id
+            JOIN quizzes q ON qa.quiz_id = q.id
+            WHERE q.id = $1 AND q.created_by = $2
+            ORDER BY qr.submitted_at DESC`;
+
+        const result = await pool.query(query, [quiz_id, teacherId]);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Results load nahi ho sakay: " + err.message });
     }
 };
