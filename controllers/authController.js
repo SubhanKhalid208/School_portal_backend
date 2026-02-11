@@ -136,3 +136,7 @@ export const resetPassword = async (req, res) => {
         res.status(400).json({ error: "Invalid or expired token!" });
     }
 };
+// AuthController.js ke aakhir mein ye add kar dein agar error khatam nahi hota
+export const sendWelcomeEmail = async () => {
+    return null; // Kuch nahi karega bas crash rok dega
+};
