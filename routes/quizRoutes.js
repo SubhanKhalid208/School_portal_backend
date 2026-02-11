@@ -12,5 +12,5 @@ router.get('/student/my-quizzes', verifyToken, quizController.getStudentQuizzes)
 router.get('/questions/:assignment_id', verifyToken, quizController.getQuizQuestions); // Ye bhi zaroori hai
 router.post('/student/submit', verifyToken, quizController.submitQuiz);
 router.get('/result/:assignment_id', verifyToken, quizController.getQuizResult); // Result/Report card ke liye
-
+router.get('/all', verifyToken, quizController.getAllQuizzes);
 export default router;

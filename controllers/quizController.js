@@ -153,3 +153,15 @@ export const getQuizResult = async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 };
+// ✅ Teacher ke banaye huay saare quizzes fetch karna
+export const getAllQuizzes = async (req, res) => {
+    try {
+        const result = await pool.query(
+            "SELECT id, title, total_marks FROM quizzes WHERE created_by = $1 ORDER BY created_at DESC",
+            [req.user.id]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: "Quizzes load nahi ho sakein." });
+    }
+};
