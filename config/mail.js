@@ -27,7 +27,6 @@ transporter.verify((error, success) => {
   }
 });
 
-// Named export (Isi ki waja se error aa raha tha)
 export { transporter };
 
 // Default export (Safeguard)

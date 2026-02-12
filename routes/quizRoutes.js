@@ -36,4 +36,8 @@ router.post('/student/submit', verifyToken, quizController.submitQuiz);
 // Individual result/report card dekhne ke liye
 router.get('/result/:assignment_id', verifyToken, quizController.getQuizResult);
 
+// routes/quizRoutes.js
+router.get('/questions-list/:quiz_id', verifyToken, quizController.getQuizQuestionsList); // List dekhne ke liye
+router.delete('/question/:id', verifyToken, quizController.deleteQuestion); // Delete karne ke liye
+
 export default router;
