@@ -16,16 +16,16 @@ import debugRoutes from './routes/debugRoutes.js';
 
 const app = express();
 
-// ✅ 1. PROXY TRUST
+// ✅ 1. PROXY TRUST (Railway Fix)
 app.set('trust proxy', 1);
 
-// ✅ 2. MANUAL CORS (Zero Library - Har request par headers lazmi jayenge)
+// ✅ 2. MANUAL CORS (No Library, Direct Headers)
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
   const allowedOrigins = [
     'http://localhost:3000', 
     'https://school-portal-frontend-sigma.vercel.app'
   ];
+  const origin = req.headers.origin;
 
   if (allowedOrigins.includes(origin) || (origin && origin.includes('vercel.app'))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
@@ -43,7 +43,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ 3. SECURITY
+// ✅ 3. SECURITY & PARSING
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -70,7 +70,7 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // ✅ 5. ROUTES (Fixing the PathError)
-// Har route ko alag alag mount karein, array use na karein
+// Array paths aur wildcards nikaal diye hain taake crash na ho
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
@@ -80,17 +80,18 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/debug', debugRoutes);
 
+// Health Check
 app.get('/', (req, res) => {
-  res.send('🚀 Lahore Portal API is Online and Fixed!');
+  res.send('🚀 Lahore Portal API is Fixed and Online!');
 });
 
-// ✅ 6. SAFE ERROR HANDLING (No more SIGTERM)
+// ✅ 6. ERROR HANDLING (Preventing SIGTERM)
 app.use((err, req, res, next) => {
-  console.error("❌ CRITICAL ERROR:", err.message);
-  res.status(500).json({ success: false, message: "Internal Server Error" });
+  console.error("❌ ERROR:", err.message);
+  res.status(500).json({ success: false, message: "Server Error" });
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Server live on port ${PORT}`);
 });
