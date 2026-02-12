@@ -16,10 +16,10 @@ import debugRoutes from './routes/debugRoutes.js';
 
 const app = express();
 
-// ✅ 1. PROXY TRUST
+// ✅ 1. PROXY TRUST (Railway Fix)
 app.set('trust proxy', 1);
 
-// ✅ 2. MANUAL CORS HEADERS (Sab se upar - No Library)
+// ✅ 2. MANUAL CORS (Har request ke liye headers set karein)
 app.use((req, res, next) => {
   const allowedOrigins = [
     'http://localhost:3000', 
@@ -27,18 +27,18 @@ app.use((req, res, next) => {
   ];
   const origin = req.headers.origin;
 
-  if (allowedOrigins.includes(origin) || (origin && origin.includes('vercel.app'))) {
+  if (allowedOrigins.includes(origin) || (origin && origin.endsWith('vercel.app'))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   } else {
-    // Development ke liye agar origin na ho
+    // Development fallback
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
 
   res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
 
-  // OPTIONS (Pre-flight) request ko foran handle karein
+  // ✅ Pre-flight OPTIONS request fix
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -75,38 +75,32 @@ app.use(passport.session());
 passport.serializeUser((user, done) => { done(null, user); });
 passport.deserializeUser((user, done) => { done(null, user); });
 
-// 🕵️ DEBUG LOGGING
-app.use((req, res, next) => {
-  console.log(`📡 Incoming: ${req.method} ${req.url}`);
-  next();
-});
-
-// ✅ 5. ROUTES MOUNTING
-app.use(['/api/auth', '/auth'], authRoutes); 
-app.use(['/api/admin', '/admin'], adminRoutes); 
-app.use(['/api/courses', '/courses'], courseRoutes); 
-app.use(['/api/teacher', '/teacher'], teacherRoutes);
-app.use(['/api/student', '/student'], studentRoutes); 
-app.use(['/api/attendance', '/attendance'], attendanceRoutes); 
-app.use(['/api/quiz', '/quiz'], quizRoutes); 
-app.use(['/api/debug', '/debug'], debugRoutes);
+// ✅ 5. ROUTES (No wildcards to prevent PathError)
+app.use('/api/auth', authRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/courses', courseRoutes);
+app.use('/api/teacher', teacherRoutes);
+app.use('/api/student', studentRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/quiz', quizRoutes);
+app.use('/api/debug', debugRoutes);
 
 // Health Check
 app.get('/', (req, res) => {
   res.send('🚀 Lahore Education API is Online and Running!');
 });
 
-// ✅ 6. ERROR HANDLING (404 & Global)
+// ✅ 6. GLOBAL ERROR HANDLING (Preventing Crashes)
 app.use((req, res) => {
-  res.status(404).json({ success: false, message: "Route nahi mila!" });
+  res.status(404).json({ success: false, message: "Route not found" });
 });
 
 app.use((err, req, res, next) => {
-  console.error("❌ SERVER ERROR:", err.message);
-  res.status(err.status || 500).json({ 
+  console.error("❌ SERVER ERROR:", err.stack);
+  res.status(500).json({ 
     success: false, 
-    message: "Server error!", 
-    error: process.env.NODE_ENV === "production" ? null : err.message 
+    message: "Internal Server Error",
+    error: err.message 
   });
 });
 
