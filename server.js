@@ -18,7 +18,7 @@ import { transporter } from './config/mail.js';
 
 const app = express();
 
-// ✅ 1. PROXY TRUST
+// ✅ 1. PROXY TRUST (Railway/Render fix)
 app.set('trust proxy', 1);
 
 // ✅ 2. SECURITY
@@ -36,6 +36,7 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('vercel.app')) {
       callback(null, true);
@@ -48,11 +49,24 @@ const corsOptions = {
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
 };
 
+// Pehle CORS middleware apply karein
 app.use(cors(corsOptions));
 
 // ✅ Manual OPTIONS handler - CRASH FIX
-// Pehle yahan '*' tha jis se crash ho raha tha. Ab ye sahi syntax hai:
-app.options(/(.*)/, cors(corsOptions));
+// Pehle yahan (.*) tha jis se crash ho raha tha. 
+// Ab hum simple middleware use karenge jo pre-flight requests ko handle karega.
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,PATCH,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+  
+  // Agar OPTIONS request ho to foran response bhej dein
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
