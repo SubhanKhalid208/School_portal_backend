@@ -16,10 +16,10 @@ import debugRoutes from './routes/debugRoutes.js';
 
 const app = express();
 
-// ✅ 1. PROXY TRUST (Railway ke liye lazmi)
+// ✅ 1. PROXY TRUST
 app.set('trust proxy', 1);
 
-// ✅ 2. FIX: Manual CORS & Pre-flight (Isay har haal mein response dena chahiye)
+// ✅ 2. MANUAL CORS (Zero Library - Har request par headers lazmi jayenge)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   const allowedOrigins = [
@@ -35,16 +35,15 @@ app.use((req, res, next) => {
 
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type, Authorization, Accept, Origin');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
 
-  // Pre-flight handshake ko foran ok karein
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
   next();
 });
 
-// ✅ 3. SECURITY & PARSING
+// ✅ 3. SECURITY
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -70,10 +69,8 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-passport.serializeUser((user, done) => { done(null, user); });
-passport.deserializeUser((user, done) => { done(null, user); });
-
-// ✅ 5. ROUTES FIX (Sirf single string paths use karein taake crash na ho)
+// ✅ 5. ROUTES (Fixing the PathError)
+// Har route ko alag alag mount karein, array use na karein
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
@@ -83,18 +80,17 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/debug', debugRoutes);
 
-// Main Route
 app.get('/', (req, res) => {
-  res.send('🚀 Lahore Education API is Online!');
+  res.send('🚀 Lahore Portal API is Online and Fixed!');
 });
 
-// ✅ 6. ERROR HANDLER (Taake server SIGTERM na kare)
+// ✅ 6. SAFE ERROR HANDLING (No more SIGTERM)
 app.use((err, req, res, next) => {
-  console.error("❌ ERROR DETECTED:", err.message);
-  res.status(500).json({ success: false, message: "Server error occurred" });
+  console.error("❌ CRITICAL ERROR:", err.message);
+  res.status(500).json({ success: false, message: "Internal Server Error" });
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`🚀 Lahore Portal Server is live on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
