@@ -22,14 +22,22 @@ if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     greetingTimeout: 10000
   });
 
-  // Verification check - only if transporter exists
-  transporter.verify((error, success) => {
-    if (error) {
-      console.error("❌ Email Transporter Error:", error.message);
-    } else {
-      console.log("✅ Lahore Portal: Email server is ready to send messages!");
+  // Verification check - Delayed & Non-blocking (nahi to Railway par crash hoga)
+  // 500ms delay taake server startup pehle complete ho jaye
+  setTimeout(() => {
+    try {
+      transporter.verify((error, success) => {
+        if (error) {
+          console.warn("⚠️ Email Transporter Warning (non-blocking):", error.message);
+          console.warn("📧 Email feature may not work, but server will continue running");
+        } else {
+          console.log("✅ Lahore Portal: Email server is ready!");
+        }
+      });
+    } catch (err) {
+      console.warn("⚠️ Email verification error (ignored):", err.message);
     }
-  });
+  }, 500);
 } else {
   console.warn("⚠️ Email config not set on Railway - Email features will be disabled");
   // Dummy transporter that logs but doesn't crash
