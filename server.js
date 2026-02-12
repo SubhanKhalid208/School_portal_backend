@@ -16,29 +16,28 @@ import debugRoutes from './routes/debugRoutes.js';
 
 const app = express();
 
-// ✅ 1. PROXY TRUST (Railway Fix)
+// ✅ 1. PROXY TRUST (Railway ke liye lazmi)
 app.set('trust proxy', 1);
 
-// ✅ 2. MANUAL CORS (Har request ke liye headers set karein)
+// ✅ 2. FIX: Manual CORS & Pre-flight (Isay har haal mein response dena chahiye)
 app.use((req, res, next) => {
+  const origin = req.headers.origin;
   const allowedOrigins = [
     'http://localhost:3000', 
     'https://school-portal-frontend-sigma.vercel.app'
   ];
-  const origin = req.headers.origin;
 
-  if (allowedOrigins.includes(origin) || (origin && origin.endsWith('vercel.app'))) {
+  if (allowedOrigins.includes(origin) || (origin && origin.includes('vercel.app'))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
   } else {
-    // Development fallback
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
 
   res.setHeader('Access-Control-Allow-Credentials', 'true');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type, Authorization, Accept, Origin');
 
-  // ✅ Pre-flight OPTIONS request fix
+  // Pre-flight handshake ko foran ok karein
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
   }
@@ -49,7 +48,6 @@ app.use((req, res, next) => {
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginEmbedderPolicy: false,
 })); 
 
 app.use(express.json());
@@ -75,7 +73,7 @@ app.use(passport.session());
 passport.serializeUser((user, done) => { done(null, user); });
 passport.deserializeUser((user, done) => { done(null, user); });
 
-// ✅ 5. ROUTES (No wildcards to prevent PathError)
+// ✅ 5. ROUTES FIX (Sirf single string paths use karein taake crash na ho)
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
@@ -85,23 +83,15 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/debug', debugRoutes);
 
-// Health Check
+// Main Route
 app.get('/', (req, res) => {
-  res.send('🚀 Lahore Education API is Online and Running!');
+  res.send('🚀 Lahore Education API is Online!');
 });
 
-// ✅ 6. GLOBAL ERROR HANDLING (Preventing Crashes)
-app.use((req, res) => {
-  res.status(404).json({ success: false, message: "Route not found" });
-});
-
+// ✅ 6. ERROR HANDLER (Taake server SIGTERM na kare)
 app.use((err, req, res, next) => {
-  console.error("❌ SERVER ERROR:", err.stack);
-  res.status(500).json({ 
-    success: false, 
-    message: "Internal Server Error",
-    error: err.message 
-  });
+  console.error("❌ ERROR DETECTED:", err.message);
+  res.status(500).json({ success: false, message: "Server error occurred" });
 });
 
 const PORT = process.env.PORT || 5000;
