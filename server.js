@@ -18,25 +18,24 @@ import { transporter } from './config/mail.js';
 
 const app = express();
 
-// ✅ 1. PROXY TRUST (Railway/Render/HTTPS Fix)
+// ✅ 1. PROXY TRUST
 app.set('trust proxy', 1);
 
-// ✅ 2. SECURITY (Modified for Cross-Origin)
+// ✅ 2. SECURITY
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" },
   crossOriginEmbedderPolicy: false,
 })); 
 
-// ✅ 3. CORS CONFIGURATION (Enhanced for RTK Query Preflight)
+// ✅ 3. CORS CONFIGURATION
 const allowedOrigins = [
   'http://localhost:3000', 
   'https://school-portal-frontend-sigma.vercel.app'
 ];
 
-app.use(cors({
+const corsOptions = {
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('vercel.app')) {
       callback(null, true);
@@ -47,15 +46,18 @@ app.use(cors({
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
-}));
+};
 
-// ✅ Manual OPTIONS handler for all routes (Crucial for Preflight)
-app.options('*', cors());
+app.use(cors(corsOptions));
+
+// ✅ Manual OPTIONS handler - CRASH FIX
+// Pehle yahan '*' tha jis se crash ho raha tha. Ab ye sahi syntax hai:
+app.options(/(.*)/, cors(corsOptions));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ 4. SESSION (Stable Cookie Settings)
+// ✅ 4. SESSION
 app.use(session({
   secret: process.env.SESSION_SECRET || 'lahore_portal_secret_2026',
   resave: false,
