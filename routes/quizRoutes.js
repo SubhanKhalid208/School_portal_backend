@@ -16,8 +16,14 @@ router.post('/teacher/assign', verifyToken, quizController.assignToStudent);
 // Teacher ko apne saare banaye huay quizzes dikhane ke liye
 router.get('/teacher/all-quizzes', verifyToken, quizController.getAllQuizzes);
 
-// ✅ IMPORTANT: Teacher ko students ke results dikhane ke liye (Ye missing tha)
+// Teacher ko students ke results dikhane ke liye
 router.get('/teacher/results/:quiz_id', verifyToken, quizController.getTeacherQuizResults);
+
+// Quiz ke andar ke MCQs dekhne ke liye (Naya Route)
+router.get('/questions-list/:quiz_id', verifyToken, quizController.getQuizQuestionsList);
+
+// Specific MCQ delete karne ke liye (Naya Route)
+router.delete('/question/:id', verifyToken, quizController.deleteQuestion);
 
 
 // ==========================================
@@ -35,9 +41,5 @@ router.post('/student/submit', verifyToken, quizController.submitQuiz);
 
 // Individual result/report card dekhne ke liye
 router.get('/result/:assignment_id', verifyToken, quizController.getQuizResult);
-
-// routes/quizRoutes.js
-router.get('/questions-list/:quiz_id', verifyToken, quizController.getQuizQuestionsList); // List dekhne ke liye
-router.delete('/question/:id', verifyToken, quizController.deleteQuestion); // Delete karne ke liye
 
 export default router;
