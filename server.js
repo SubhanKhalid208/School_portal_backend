@@ -28,7 +28,7 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
 })); 
 
-// ✅ 3. CORS CONFIGURATION (Strict Fix for Vercel + RTK Query)
+// ✅ 3. CORS CONFIGURATION (Enhanced for RTK Query Preflight)
 const allowedOrigins = [
   'http://localhost:3000', 
   'https://school-portal-frontend-sigma.vercel.app'
@@ -36,34 +36,34 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+    // Allow requests with no origin (like mobile apps)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('vercel.app')) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS block kar raha hai!'), false);
     }
-    return callback(null, true);
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
 }));
 
-// ✅ Manual OPTIONS handler (Preflight request fix)
+// ✅ Manual OPTIONS handler for all routes (Crucial for Preflight)
 app.options('*', cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ 4. SESSION (Cookie Fix for Chrome/Vercel)
+// ✅ 4. SESSION (Stable Cookie Settings)
 app.use(session({
   secret: process.env.SESSION_SECRET || 'lahore_portal_secret_2026',
   resave: false,
   saveUninitialized: false, 
   proxy: true, 
   cookie: { 
-    secure: true, // Required for HTTPS (Vercel)
-    sameSite: 'none', // Required for Cross-domain cookies
+    secure: true, 
+    sameSite: 'none', 
     httpOnly: true, 
     maxAge: 24 * 60 * 60 * 1000 
   }
@@ -108,10 +108,10 @@ app.use((req, res) => {
 // ✅ 7. GLOBAL ERROR HANDLING
 app.use((err, req, res, next) => {
   console.error("❌ SERVER ERROR:", err.message);
-  res.status(500).json({ 
+  res.status(err.status || 500).json({ 
     success: false, 
-    message: "Server mein koi bari ghalti hui hai!", 
-    error: process.env.NODE_ENV === "production" ? null : err.message 
+    message: err.message || "Server mein koi bari ghalti hui hai!", 
+    error: process.env.NODE_ENV === "production" ? null : err.stack 
   });
 });
 
@@ -119,7 +119,6 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, async () => {
   console.log(`🚀 Lahore Portal Server is live on port ${PORT}`);
   try {
-    // Only verify mail if transporter is ready
     if (transporter && transporter.verify) {
         await transporter.verify();
         console.log('✅ Mail system connected.');
