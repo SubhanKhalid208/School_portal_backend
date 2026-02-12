@@ -8,14 +8,12 @@ export const teacherCreateQuiz = async (req, res) => {
     try {
         const totalMarks = questions.reduce((sum, q) => sum + parseInt(q.marks), 0);
         
-        // Save Quiz
         const quizRes = await pool.query(
             "INSERT INTO quizzes (title, description, total_marks, passing_marks, created_by) VALUES ($1, $2, $3, $4, $5) RETURNING id",
             [title, description, totalMarks, passing_marks, teacherId]
         );
         const quizId = quizRes.rows[0].id;
 
-        // Save Questions
         for (const q of questions) {
             await pool.query(
                 "INSERT INTO questions (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_option, marks) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
@@ -43,7 +41,7 @@ export const assignToStudent = async (req, res) => {
     }
 };
 
-// 3. Student: Submit Quiz & Generate Result
+// 3. Student: Submit Quiz
 export const submitQuiz = async (req, res) => {
     const { assignment_id, answers } = req.body; 
     const studentId = req.user.id;
@@ -93,26 +91,17 @@ export const submitQuiz = async (req, res) => {
 
         res.json({ success: true, score, status, totalMarks });
     } catch (err) {
-        console.error("Submission Error:", err);
         res.status(500).json({ error: "Submission fail: " + err.message });
     }
 };
 
-// 4. Student: Get Assigned Quizzes
+// 4. Student: Get My Quizzes
 export const getStudentQuizzes = async (req, res) => {
     const studentId = req.user.id;
     try {
         const query = `
-            SELECT 
-                qa.id AS assignment_id, 
-                q.title, 
-                q.description, 
-                q.total_marks, 
-                u.name AS teacher_name, 
-                qa.is_completed, 
-                qa.assigned_at,
-                qr.score,
-                qr.status
+            SELECT qa.id AS assignment_id, q.title, q.description, q.total_marks, u.name AS teacher_name, 
+                   qa.is_completed, qa.assigned_at, qr.score, qr.status
             FROM quiz_assignments qa
             JOIN quizzes q ON qa.quiz_id = q.id
             JOIN users u ON q.created_by = u.id
@@ -123,11 +112,11 @@ export const getStudentQuizzes = async (req, res) => {
         const result = await pool.query(query, [studentId]);
         res.json(result.rows);
     } catch (err) {
-        res.status(500).json({ error: "Quizzes fetch nahi ho sakein: " + err.message });
+        res.status(500).json({ error: err.message });
     }
 };
 
-// 5. Student: Get Questions (For Attempting)
+// 5. Student: Get Questions
 export const getQuizQuestions = async (req, res) => {
     const { assignment_id } = req.params;
     const studentId = req.user.id;
@@ -149,7 +138,7 @@ export const getQuizQuestions = async (req, res) => {
     }
 };
 
-// 6. Report Card: Get Result
+// 6. Report Card
 export const getQuizResult = async (req, res) => {
     const { assignment_id } = req.params;
     const studentId = req.user.id;
@@ -162,14 +151,13 @@ export const getQuizResult = async (req, res) => {
             JOIN users u ON q.created_by = u.id
             WHERE qr.assignment_id = $1 AND qr.student_id = $2
         `, [assignment_id, studentId]);
-        if (result.rows.length === 0) return res.status(404).json({ error: "Result nahi mila!" });
         res.json(result.rows[0]);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 };
 
-// 7. Teacher: Get All Created Quizzes
+// 7. Teacher: Get All Quizzes
 export const getAllQuizzes = async (req, res) => {
     try {
         const result = await pool.query(
@@ -178,11 +166,11 @@ export const getAllQuizzes = async (req, res) => {
         );
         res.json(result.rows);
     } catch (err) {
-        res.status(500).json({ error: "Quizzes load nahi ho sakein." });
+        res.status(500).json({ error: err.message });
     }
 };
 
-// 8. Teacher: Get All Results for a Quiz
+// 8. Teacher: Get Results
 export const getTeacherQuizResults = async (req, res) => {
     const { quiz_id } = req.params;
     const teacherId = req.user.id;
@@ -198,15 +186,11 @@ export const getTeacherQuizResults = async (req, res) => {
         const result = await pool.query(query, [quiz_id, teacherId]);
         res.json(result.rows);
     } catch (err) {
-        res.status(500).json({ error: "Results load nahi ho sakay." });
+        res.status(500).json({ error: err.message });
     }
 };
 
-// ==========================================
-// ✅ ADDED THESE MISSING FUNCTIONS TO FIX CRASH
-// ==========================================
-
-// 9. Teacher: Get Questions List for Auditing/Editing
+// 9. Teacher: View MCQ List
 export const getQuizQuestionsList = async (req, res) => {
     try {
         const { quiz_id } = req.params;
@@ -214,27 +198,46 @@ export const getQuizQuestionsList = async (req, res) => {
             "SELECT id, question_text, option_a, option_b, option_c, option_d, correct_option, marks FROM questions WHERE quiz_id = $1 ORDER BY id ASC",
             [quiz_id]
         );
-        
-        // Frontend expects options as an array, so we format them
         const formattedQuestions = result.rows.map(q => ({
             ...q,
             options: JSON.stringify([q.option_a, q.option_b, q.option_c, q.option_d]),
             correct_answer: q.correct_option
         }));
-
         res.json(formattedQuestions);
     } catch (err) {
-        res.status(500).json({ error: "Questions list load nahi ho saki: " + err.message });
+        res.status(500).json({ error: err.message });
     }
 };
 
-// 10. Teacher: Delete a Question
+// 10. Teacher: Delete Single MCQ
 export const deleteQuestion = async (req, res) => {
     try {
         const { id } = req.params;
         await pool.query("DELETE FROM questions WHERE id = $1", [id]);
-        res.json({ success: true, message: "Question successfully deleted!" });
+        res.json({ success: true, message: "Question deleted!" });
     } catch (err) {
-        res.status(500).json({ error: "Question delete nahi ho saka: " + err.message });
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// 11. Teacher: Delete Entire Quiz (NEW)
+export const deleteQuiz = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const teacherId = req.user.id;
+
+        // Security check: only creator can delete
+        const check = await pool.query("SELECT id FROM quizzes WHERE id = $1 AND created_by = $2", [id, teacherId]);
+        if (check.rows.length === 0) return res.status(403).json({ error: "Unauthorized" });
+
+        // Clean up related data first
+        await pool.query("DELETE FROM quiz_results WHERE assignment_id IN (SELECT id FROM quiz_assignments WHERE quiz_id = $1)", [id]);
+        await pool.query("DELETE FROM quiz_assignments WHERE quiz_id = $1", [id]);
+        await pool.query("DELETE FROM questions WHERE quiz_id = $1", [id]);
+        await pool.query("DELETE FROM quizzes WHERE id = $1", [id]);
+
+        res.json({ success: true, message: "Quiz deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 };
