@@ -1,5 +1,19 @@
 import pool from '../config/db.js';
 
+// Helper: determine which column stores assignment reference in quiz_results
+let _assignmentCol = null;
+const getAssignmentColumn = async () => {
+    if (_assignmentCol) return _assignmentCol;
+    try {
+        const res = await pool.query(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='quiz_results' AND column_name IN ('assignment_id','quiz_assignment_id','assignmentid') LIMIT 1"
+        );
+        _assignmentCol = res.rows[0]?.column_name || 'assignment_id';
+    } catch (err) {
+        _assignmentCol = 'assignment_id';
+    }
+    return _assignmentCol;
+};
 // 1. Teacher: Create a New Quiz
 export const teacherCreateQuiz = async (req, res) => {
     const { title, description, passing_marks, questions } = req.body;
@@ -47,8 +61,9 @@ export const submitQuiz = async (req, res) => {
     const studentId = req.user.id;
 
     try {
+        const col = await getAssignmentColumn();
         const alreadySubmitted = await pool.query(
-            "SELECT id FROM quiz_results WHERE assignment_id = $1 AND student_id = $2",
+            `SELECT id FROM quiz_results WHERE ${col} = $1 AND student_id = $2`,
             [assignment_id, studentId]
         );
 
@@ -81,11 +96,10 @@ export const submitQuiz = async (req, res) => {
         const passingMarks = quizInfo.rows[0]?.passing_marks || 0;
         const status = score >= passingMarks ? 'PASS' : 'FAIL';
 
-        await pool.query(
-            `INSERT INTO quiz_results (assignment_id, student_id, score, total_marks, status) 
-             VALUES ($1, $2, $3, $4, $5)`,
-            [assignment_id, studentId, score, totalMarks, status]
-        );
+        // Insert using detected assignment column name
+        const insertCol = await getAssignmentColumn();
+        const insertSQL = `INSERT INTO quiz_results (${insertCol}, student_id, score, total_marks, status) VALUES ($1, $2, $3, $4, $5)`;
+        await pool.query(insertSQL, [assignment_id, studentId, score, totalMarks, status]);
 
         await pool.query("UPDATE quiz_assignments SET is_completed = TRUE WHERE id = $1", [assignment_id]);
 
@@ -99,16 +113,17 @@ export const submitQuiz = async (req, res) => {
 export const getStudentQuizzes = async (req, res) => {
     const studentId = req.user.id;
     try {
+        const col = await getAssignmentColumn();
         const query = `
             SELECT qa.id AS assignment_id, q.title, q.description, q.total_marks, u.name AS teacher_name, 
                    qa.is_completed, qa.assigned_at, qr.score, qr.status
             FROM quiz_assignments qa
             JOIN quizzes q ON qa.quiz_id = q.id
             JOIN users u ON q.created_by = u.id
-            LEFT JOIN quiz_results qr ON qa.id = qr.assignment_id AND qr.student_id = $1
+            LEFT JOIN quiz_results qr ON qa.id = qr.${col} AND qr.student_id = $1
             WHERE qa.student_id = $1 
             ORDER BY qa.assigned_at DESC`;
-        
+
         const result = await pool.query(query, [studentId]);
         res.json(result.rows);
     } catch (err) {
@@ -143,13 +158,14 @@ export const getQuizResult = async (req, res) => {
     const { assignment_id } = req.params;
     const studentId = req.user.id;
     try {
+        const col = await getAssignmentColumn();
         const result = await pool.query(`
             SELECT qr.*, q.title, q.passing_marks, u.name as teacher_name
             FROM quiz_results qr
-            JOIN quiz_assignments qa ON qr.assignment_id = qa.id
+            JOIN quiz_assignments qa ON qr.${col} = qa.id
             JOIN quizzes q ON qa.quiz_id = q.id
             JOIN users u ON q.created_by = u.id
-            WHERE qr.assignment_id = $1 AND qr.student_id = $2
+            WHERE qr.${col} = $1 AND qr.student_id = $2
         `, [assignment_id, studentId]);
         res.json(result.rows[0]);
     } catch (err) {
@@ -175,10 +191,11 @@ export const getTeacherQuizResults = async (req, res) => {
     const { quiz_id } = req.params;
     const teacherId = req.user.id;
     try {
+        const col = await getAssignmentColumn();
         const query = `
             SELECT u.name as student_name, u.email as student_email, qr.score, qr.total_marks, qr.status, qr.submitted_at
             FROM quiz_results qr
-            JOIN quiz_assignments qa ON qr.assignment_id = qa.id
+            JOIN quiz_assignments qa ON qr.${col} = qa.id
             JOIN users u ON qr.student_id = u.id
             JOIN quizzes q ON qa.quiz_id = q.id
             WHERE q.id = $1 AND q.created_by = $2
@@ -231,7 +248,8 @@ export const deleteQuiz = async (req, res) => {
         if (check.rows.length === 0) return res.status(403).json({ error: "Unauthorized" });
 
         // Clean up related data first
-        await pool.query("DELETE FROM quiz_results WHERE assignment_id IN (SELECT id FROM quiz_assignments WHERE quiz_id = $1)", [id]);
+        const col = await getAssignmentColumn();
+        await pool.query(`DELETE FROM quiz_results WHERE ${col} IN (SELECT id FROM quiz_assignments WHERE quiz_id = $1)`, [id]);
         await pool.query("DELETE FROM quiz_assignments WHERE quiz_id = $1", [id]);
         await pool.query("DELETE FROM questions WHERE quiz_id = $1", [id]);
         await pool.query("DELETE FROM quizzes WHERE id = $1", [id]);
