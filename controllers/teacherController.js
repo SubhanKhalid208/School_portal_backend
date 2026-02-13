@@ -31,7 +31,7 @@ export const markAttendance = async (req, res) => {
             "SELECT id FROM attendance WHERE student_id = $1 AND course_id = $2 AND date = $3",
             [studentId, courseId, attDate]
         );
-
+        
         if (existing.rows.length > 0) {
             await pool.query("UPDATE attendance SET status = $1 WHERE id = $2", [status, existing.rows[0].id]);
         } else {

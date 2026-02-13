@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import cors from 'cors'; // Cors library lazmi hai
+import cors from 'cors'; 
 import passport from 'passport'; 
 import session from 'express-session'; 
 import helmet from 'helmet'; 
@@ -20,20 +20,27 @@ const app = express();
 // ✅ 1. PROXY TRUST (Railway deployment ke liye zaroori hai)
 app.set('trust proxy', 1);
 
-// ✅ 2. CORS SETUP (Saare Errors ka khatma)
+// ✅ 2. DYNAMIC CORS SETUP (Local + Production Fix)
+// CLIENT_URL ko environment variable se utha kar array mein convert kiya
+const envOrigins = process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',') : [];
 const allowedOrigins = [
   'http://localhost:3000', 
   'https://school-portal-frontend-sigma.vercel.app',
-  process.env.CLIENT_URL // Agar Railway variables mein set hai
+  ...envOrigins
 ];
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Postman ya local requests ke liye (null origin) allow karein
+    // Postman ya direct server calls ke liye
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('vercel.app')) {
+    
+    // Check if origin is in allowed list or is a vercel subdomain
+    const isAllowed = allowedOrigins.includes(origin) || origin.endsWith('.vercel.app');
+    
+    if (isAllowed) {
       callback(null, true);
     } else {
+      console.log("❌ Blocked by CORS:", origin);
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -51,15 +58,18 @@ app.use(helmet({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ 4. SESSION (Cookies Fix)
+// ✅ 4. SESSION (Environment Aware Cookies)
+// Localhost par 'secure: true' kaam nahi karta agar HTTPS na ho
+const isProduction = process.env.NODE_ENV === 'production';
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'lahore_portal_secret_2026',
   resave: false,
   saveUninitialized: false, 
   proxy: true, 
   cookie: { 
-    secure: true, // Railway HTTPS use karta hai
-    sameSite: 'none', 
+    secure: isProduction, // Production (Railway) par true, Local par false
+    sameSite: isProduction ? 'none' : 'lax', // Local host login fix
     httpOnly: true, 
     maxAge: 24 * 60 * 60 * 1000 
   }
@@ -68,7 +78,7 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ✅ 5. ROUTES (Clean Paths - No Wildcards)
+// ✅ 5. ROUTES
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
@@ -83,17 +93,17 @@ app.get('/', (req, res) => {
   res.send('🚀 Lahore Portal API is Fixed and Online!');
 });
 
-// ✅ 6. ERROR HANDLING (Preventing SIGTERM Crash)
+// ✅ 6. ERROR HANDLING
 app.use((err, req, res, next) => {
   console.error("❌ CRITICAL ERROR:", err.message);
   res.status(500).json({ 
     success: false, 
     message: "Server Error",
-    error: process.env.NODE_ENV === 'development' ? err.message : {}
+    error: !isProduction ? err.message : {}
   });
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
 });
