@@ -138,7 +138,7 @@ router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 4. STUDENT ANALYTICS ---
+// --- 4. STUDENT ANALYTICS (Fixed for Neon Columns) ---
 router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     if (!studentId || studentId === 'undefined' || studentId === 'null') {
@@ -146,7 +146,7 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 
     try {
-        // Neon DB Sync: assignment_id and submitted_at
+        // Neon DB Sync: assignment_id aur submitted_at ka istemal
         const quizResults = await pool.query(`
             SELECT 
                 q.title as subject, 
@@ -179,10 +179,12 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 5. MY QUIZZES (Frontend Path Adjust: Iska endpoint ab match karega) ---
-// Frontend is calling: /api/student/quiz/student/my-quizzes/:id
+// --- 5. MY QUIZZES (Frontend Path Match Fix) ---
 router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
+    if (!studentId || studentId === 'undefined' || studentId === 'null') {
+        return res.status(400).json({ success: false, error: "Student ID missing hai." });
+    }
     try {
         const result = await pool.query(`
             SELECT qr.*, q.title as quiz_title 
