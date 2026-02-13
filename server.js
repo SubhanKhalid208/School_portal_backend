@@ -17,10 +17,10 @@ import debugRoutes from './routes/debugRoutes.js';
 
 const app = express();
 
-// ✅ 1. PROXY TRUST (Railway deployment ke liye zaroori hai)
+// ✅ 1. PROXY TRUST (Railway deployment ke liye zaroori)
 app.set('trust proxy', 1);
 
-// ✅ 2. DYNAMIC CORS SETUP
+// ✅ 2. DYNAMIC CORS SETUP (Saari porani logic intact hai)
 const envOrigins = process.env.CLIENT_URL ? process.env.CLIENT_URL.split(',') : [];
 const allowedOrigins = [
   'http://localhost:3000', 
@@ -53,13 +53,13 @@ app.use(helmet({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Debugging Middleware: Har request ko console par dekhne ke liye
+// Debugging Middleware
 app.use((req, res, next) => {
   console.log(`📡 [${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// ✅ 4. SESSION
+// ✅ 4. SESSION (Railway/Production Optimized)
 const isProduction = process.env.NODE_ENV === 'production';
 
 app.use(session({
@@ -79,12 +79,11 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // ✅ 5. ROUTES
-// Ensure karein ke studentRoutes.js mein analytics ka route mojud hai
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/teacher', teacherRoutes);
-app.use('/api/student', studentRoutes); // Is line par focus karein
+app.use('/api/student', studentRoutes); 
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/debug', debugRoutes);
@@ -94,23 +93,26 @@ app.get('/', (req, res) => {
   res.send('🚀 Lahore Portal API is Fixed and Online!');
 });
 
-// ✅ 6. ERROR HANDLING
+// ✅ 6. ROBUST ERROR HANDLING (Ab server crash nahi hoga)
 app.use((err, req, res, next) => {
-  console.error("❌ CRITICAL ERROR:", err.message);
-  res.status(500).json({ 
+  console.error("❌ CRITICAL ERROR LOG:", err.stack || err.message);
+  res.status(err.status || 500).json({ 
     success: false, 
-    message: "Server Error",
-    error: !isProduction ? err.message : "Internal Server Error"
+    message: "Server side error occurred",
+    error: isProduction ? "Internal Server Error" : err.message
   });
 });
 
-// 404 Handler: Agar koi route match nahi hota
+// 404 Handler
 app.use((req, res) => {
-  console.log(`⚠️ 404 Not Found: ${req.method} ${req.originalUrl}`);
-  res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found on Lahore Portal server.` });
+  console.log(`⚠️ 404: ${req.method} ${req.originalUrl}`);
+  res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found.` });
 });
 
+// ✅ 7. SERVER START WITH ERROR CATCH
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
+}).on('error', (err) => {
+  console.error("❌ Failed to start server:", err.message);
 });
