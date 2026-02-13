@@ -8,7 +8,7 @@ import { sendWelcomeEmail } from '../controllers/authController.js';
 
 const router = express.Router();
 
-// Production (Railway) ke liye /tmp folder behtar hai
+// Production (Railway) ke liye /tmp folder
 const upload = multer({ dest: '/tmp/' });
 
 // --- 1. BULK UPLOAD ---
@@ -83,7 +83,7 @@ router.post('/bulk-upload', verifyToken, upload.single('file'), async (req, res)
 // --- 2. FETCH ENROLLED COURSES ---
 router.get('/my-courses/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
-    if (!studentId || studentId === 'undefined') return res.status(400).json({ error: "ID missing" });
+    if (!studentId || studentId === 'undefined' || studentId === 'null') return res.status(400).json({ error: "ID missing" });
 
     try {
         const result = await pool.query(
@@ -102,7 +102,7 @@ router.get('/my-courses/:studentId', verifyToken, async (req, res) => {
 // --- 3. ATTENDANCE STATS ---
 router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
-    if (!studentId || studentId === 'undefined') {
+    if (!studentId || studentId === 'undefined' || studentId === 'null') {
         return res.status(400).json({ success: false, error: "Student ID missing hai." });
     }
     try {
@@ -138,18 +138,15 @@ router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 4. STUDENT ANALYTICS (FINAL DATABASE SYNC) ---
+// --- 4. STUDENT ANALYTICS ---
 router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
-    
-    console.log("📡 Fetching Analytics for Student ID:", studentId);
-
     if (!studentId || studentId === 'undefined' || studentId === 'null') {
         return res.status(400).json({ success: false, error: "Invalid Student ID" });
     }
 
     try {
-        // FIXED QUERY: assignment_id aur submitted_at columns use kiye hain jo aapke DB mein hain
+        // Neon DB Columns Sync: assignment_id aur submitted_at
         const quizResults = await pool.query(`
             SELECT 
                 q.title as subject, 
@@ -160,7 +157,6 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
             ORDER BY qr.submitted_at ASC`, [studentId]
         );
 
-        // Attendance Monthly Trends
         const attendanceTrend = await pool.query(`
             SELECT TO_CHAR(date, 'Mon') as month,
             COUNT(*) FILTER (WHERE LOWER(status) = 'present') as present,
@@ -179,11 +175,25 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
             }
         });
     } catch (err) {
-        console.error("❌ Analytics Final Error:", err.message);
-        res.status(500).json({ 
-            success: false, 
-            error: "Database Structure Error: " + err.message 
-        });
+        res.status(500).json({ success: false, error: "Analytics Error: " + err.message });
+    }
+});
+
+// --- 5. MY QUIZZES (EXTRA FIX) ---
+// Yeh wo route hai jo dashboard pe crash ho sakta hai agar ID galat ho
+router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) => {
+    const { studentId } = req.params;
+    try {
+        const result = await pool.query(`
+            SELECT qr.*, q.title as quiz_title 
+            FROM quiz_results qr
+            JOIN quizzes q ON qr.assignment_id = q.id
+            WHERE qr.student_id = $1
+            ORDER BY qr.submitted_at DESC`, [studentId]);
+            
+        res.json({ success: true, quizzes: result.rows });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
