@@ -138,7 +138,7 @@ router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 4. STUDENT ANALYTICS (Neon DB Schema Match) ---
+// --- 4. STUDENT ANALYTICS ---
 router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     if (!studentId || studentId === 'undefined' || studentId === 'null') {
@@ -146,7 +146,7 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 
     try {
-        // Fix: quiz_id aur created_at use kiya gaya hai (Neon DB sync)
+        // Neon DB Sync: quiz_id aur created_at ka istemal
         const quizResults = await pool.query(`
             SELECT 
                 q.title as subject, 
@@ -182,14 +182,14 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 5. MY QUIZZES (Column Names Sync) ---
+// --- 5. MY QUIZZES ---
 router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     if (!studentId || studentId === 'undefined' || studentId === 'null') {
         return res.status(400).json({ success: false, error: "Student ID missing hai." });
     }
     try {
-        // Fix: qr.quiz_id aur qr.created_at use kiya gaya hai
+        // Fix: qr.quiz_id aur qr.created_at ka istemal
         const result = await pool.query(`
             SELECT qr.*, q.title as quiz_title 
             FROM quiz_results qr
