@@ -138,7 +138,7 @@ router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 4. STUDENT ANALYTICS (Fixed for Neon Columns) ---
+// --- 4. STUDENT ANALYTICS (Neon DB Schema Match) ---
 router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     if (!studentId || studentId === 'undefined' || studentId === 'null') {
@@ -146,15 +146,15 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 
     try {
-        // Neon DB Sync: assignment_id aur submitted_at ka istemal
+        // Fix: quiz_id aur created_at use kiya gaya hai (Neon DB sync)
         const quizResults = await pool.query(`
             SELECT 
                 q.title as subject, 
-                ROUND((CAST(qr.score AS FLOAT) / NULLIF(CAST(q.total_marks AS FLOAT), 0)) * 100) as percentage
+                qr.score, q.total_marks
             FROM quiz_results qr
-            INNER JOIN quizzes q ON qr.assignment_id = q.id 
+            INNER JOIN quizzes q ON qr.quiz_id = q.id 
             WHERE qr.student_id = $1
-            ORDER BY qr.submitted_at ASC`, [studentId]
+            ORDER BY qr.created_at ASC`, [studentId]
         );
 
         const attendanceTrend = await pool.query(`
@@ -170,7 +170,10 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
         res.json({
             success: true,
             data: {
-                quizTrends: quizResults.rows,
+                quizTrends: quizResults.rows.map(r => ({
+                    subject: r.subject,
+                    percentage: r.total_marks > 0 ? Math.round((r.score / r.total_marks) * 100) : 0
+                })),
                 attendanceTrends: attendanceTrend.rows
             }
         });
@@ -179,19 +182,20 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 5. MY QUIZZES (Frontend Path Match Fix) ---
+// --- 5. MY QUIZZES (Column Names Sync) ---
 router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     if (!studentId || studentId === 'undefined' || studentId === 'null') {
         return res.status(400).json({ success: false, error: "Student ID missing hai." });
     }
     try {
+        // Fix: qr.quiz_id aur qr.created_at use kiya gaya hai
         const result = await pool.query(`
             SELECT qr.*, q.title as quiz_title 
             FROM quiz_results qr
-            JOIN quizzes q ON qr.assignment_id = q.id
+            JOIN quizzes q ON qr.quiz_id = q.id
             WHERE qr.student_id = $1
-            ORDER BY qr.submitted_at DESC`, [studentId]);
+            ORDER BY qr.created_at DESC`, [studentId]);
             
         res.json({ success: true, quizzes: result.rows });
     } catch (err) {
