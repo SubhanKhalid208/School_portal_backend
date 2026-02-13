@@ -15,7 +15,9 @@ export const bulkUploadStudents = async (req, res) => {
         .pipe(csv())
         .on('data', (data) => results.push(data))
         .on('end', async () => {
+            const client = await pool.connect(); // Transaction ke liye client use karein
             try {
+                await client.query('BEGIN'); // Start Transaction
                 let successCount = 0;
                 
                 for (const row of results) {
@@ -25,16 +27,24 @@ export const bulkUploadStudents = async (req, res) => {
 
                     const cleanEmail = email.trim().toLowerCase();
                     
-                    const userExists = await pool.query("SELECT * FROM users WHERE email = $1", [cleanEmail]);
+                    const userExists = await client.query("SELECT * FROM users WHERE email = $1", [cleanEmail]);
                     
                     if (userExists.rows.length === 0) {
-                        const insertRes = await pool.query(
-                            'INSERT INTO users (name, email, role, is_approved, dob) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-                            [name || 'Student', cleanEmail, 'student', true, dob]
+                        // 1. Insert User (Added default password to prevent NOT NULL errors)
+                        const insertRes = await client.query(
+                            'INSERT INTO users (name, email, role, is_approved, dob, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+                            [name || 'Student', cleanEmail, 'student', true, dob || null, 'student123']
                         );
                         
                         const newUserId = insertRes.rows[0].id;
 
+                        // 2. ✅ Auto-enrollment (Adding this to match your route logic)
+                        await client.query(
+                            'INSERT INTO student_courses (student_id, course_id) SELECT $1, id FROM courses ON CONFLICT DO NOTHING',
+                            [newUserId]
+                        );
+
+                        // 3. Trigger Email (Non-blocking)
                         try {
                             await sendWelcomeEmail(cleanEmail, newUserId);
                             console.log(`✅ Welcome Email triggered for: ${cleanEmail}`);
@@ -48,20 +58,25 @@ export const bulkUploadStudents = async (req, res) => {
                     }
                 }
                 
+                await client.query('COMMIT'); // Save Changes
+
                 if (fs.existsSync(filePath)) {
                     fs.unlinkSync(filePath);
                 }
 
                 res.json({ 
                     success: true, 
-                    message: `${successCount} naye students add huay aur emails bhej di gayi hain!`,
+                    message: `Lahore Portal: ${successCount} naye students add huay aur enrollment mukammal hui!`,
                     totalProcessed: results.length
                 });
 
             } catch (err) {
+                await client.query('ROLLBACK'); // Error pe rollback karein
                 console.error("Bulk Upload Error:", err);
                 if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-                res.status(500).json({ error: "Database error during bulk upload" });
+                res.status(500).json({ error: "Database error during bulk upload: " + err.message });
+            } finally {
+                client.release();
             }
         });
 };
