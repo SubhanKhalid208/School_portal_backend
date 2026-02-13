@@ -146,7 +146,7 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 
     try {
-        // Neon DB Columns Sync: assignment_id aur submitted_at
+        // Neon DB Sync: assignment_id and submitted_at
         const quizResults = await pool.query(`
             SELECT 
                 q.title as subject, 
@@ -179,8 +179,8 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 5. MY QUIZZES (EXTRA FIX) ---
-// Yeh wo route hai jo dashboard pe crash ho sakta hai agar ID galat ho
+// --- 5. MY QUIZZES (Frontend Path Adjust: Iska endpoint ab match karega) ---
+// Frontend is calling: /api/student/quiz/student/my-quizzes/:id
 router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     try {
@@ -193,7 +193,7 @@ router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) 
             
         res.json({ success: true, quizzes: result.rows });
     } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
+        res.status(500).json({ success: false, error: "Quiz fetch error: " + err.message });
     }
 });
 
