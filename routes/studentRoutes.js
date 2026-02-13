@@ -138,7 +138,7 @@ router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 4. STUDENT ANALYTICS (FIXED FOR LIVE DATABASE) ---
+// --- 4. STUDENT ANALYTICS (FINAL DATABASE SYNC) ---
 router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     
@@ -149,16 +149,15 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 
     try {
-        // FIXED QUERY: Jo columns live DB mein missing thay unko handle kiya hai
-        // qr.quiz_id ki jagah check kiya ke quizzes table se sahi link ho
+        // FIXED QUERY: assignment_id aur submitted_at columns use kiye hain jo aapke DB mein hain
         const quizResults = await pool.query(`
             SELECT 
                 q.title as subject, 
                 ROUND((CAST(qr.score AS FLOAT) / NULLIF(CAST(q.total_marks AS FLOAT), 0)) * 100) as percentage
             FROM quiz_results qr
-            INNER JOIN quizzes q ON qr.quiz_id = q.id 
+            INNER JOIN quizzes q ON qr.assignment_id = q.id 
             WHERE qr.student_id = $1
-            ORDER BY qr.created_at ASC`, [studentId]
+            ORDER BY qr.submitted_at ASC`, [studentId]
         );
 
         // Attendance Monthly Trends
@@ -180,7 +179,7 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
             }
         });
     } catch (err) {
-        console.error("❌ Analytics Route Error:", err.message);
+        console.error("❌ Analytics Final Error:", err.message);
         res.status(500).json({ 
             success: false, 
             error: "Database Structure Error: " + err.message 
