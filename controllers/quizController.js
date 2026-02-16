@@ -1,6 +1,6 @@
 import pool from '../config/db.js';
 
-// Helper: determine which column stores assignment reference in quiz_results
+// ✅ Helper: determine which column stores assignment reference in quiz_results
 let _assignmentCol = null;
 const getAssignmentColumn = async () => {
     if (_assignmentCol) return _assignmentCol;
@@ -14,6 +14,7 @@ const getAssignmentColumn = async () => {
     }
     return _assignmentCol;
 };
+
 // 1. Teacher: Create a New Quiz
 export const teacherCreateQuiz = async (req, res) => {
     const { title, description, passing_marks, questions } = req.body;
@@ -96,9 +97,7 @@ export const submitQuiz = async (req, res) => {
         const passingMarks = quizInfo.rows[0]?.passing_marks || 0;
         const status = score >= passingMarks ? 'PASS' : 'FAIL';
 
-        // Insert using detected assignment column name
-        const insertCol = await getAssignmentColumn();
-        const insertSQL = `INSERT INTO quiz_results (${insertCol}, student_id, score, total_marks, status) VALUES ($1, $2, $3, $4, $5)`;
+        const insertSQL = `INSERT INTO quiz_results (${col}, student_id, score, total_marks, status) VALUES ($1, $2, $3, $4, $5)`;
         await pool.query(insertSQL, [assignment_id, studentId, score, totalMarks, status]);
 
         await pool.query("UPDATE quiz_assignments SET is_completed = TRUE WHERE id = $1", [assignment_id]);
@@ -237,17 +236,15 @@ export const deleteQuestion = async (req, res) => {
     }
 };
 
-// 11. Teacher: Delete Entire Quiz (NEW)
+// 11. Teacher: Delete Entire Quiz
 export const deleteQuiz = async (req, res) => {
     try {
         const { id } = req.params;
         const teacherId = req.user.id;
 
-        // Security check: only creator can delete
         const check = await pool.query("SELECT id FROM quizzes WHERE id = $1 AND created_by = $2", [id, teacherId]);
         if (check.rows.length === 0) return res.status(403).json({ error: "Unauthorized" });
 
-        // Clean up related data first
         const col = await getAssignmentColumn();
         await pool.query(`DELETE FROM quiz_results WHERE ${col} IN (SELECT id FROM quiz_assignments WHERE quiz_id = $1)`, [id]);
         await pool.query("DELETE FROM quiz_assignments WHERE quiz_id = $1", [id]);
@@ -257,5 +254,33 @@ export const deleteQuiz = async (req, res) => {
         res.json({ success: true, message: "Quiz deleted successfully" });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+};
+
+// 12. Student Dashboard Analytics (FIXED)
+export const getStudentAnalytics = async (req, res) => {
+    const studentId = req.params.id || req.user.id;
+    try {
+        const col = await getAssignmentColumn();
+        const query = `
+            SELECT q.title as label, qr.score as value
+            FROM quiz_results qr
+            INNER JOIN quiz_assignments qa ON qr.${col} = qa.id
+            INNER JOIN quizzes q ON qa.quiz_id = q.id
+            WHERE qr.student_id = $1
+            ORDER BY qr.submitted_at ASC LIMIT 10`;
+
+        const quizTrends = await pool.query(query, [studentId]);
+
+        res.json({
+            success: true,
+            data: {
+                quizTrends: quizTrends.rows,
+                attendanceTrends: [] 
+            }
+        });
+    } catch (err) {
+        console.error("DEBUG ERROR:", err.message);
+        res.status(500).json({ success: false, error: "Analytics Error: " + err.message });
     }
 };
