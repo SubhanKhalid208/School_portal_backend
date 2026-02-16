@@ -239,35 +239,29 @@ export const deleteQuiz = async (req, res) => {
 };
 
 // 12. Student Dashboard Analytics (STRICT NEON FIX)
+// Function #12: FINAL HARD FIX
 export const getStudentAnalytics = async (req, res) => {
     const studentId = req.params.id || req.user.id;
     try {
-        // Muhammad Ahmed, yahan 'created_at' ko 'submitted_at' kar diya hai
-        // Kyunki quiz_results mein aksar 'submitted_at' hota hai.
+        // Muhammad Ahmed, maine yahan direct column names likh diye hain
         const query = `
             SELECT 
                 q.title as label, 
                 qr.score as value
             FROM quiz_results qr
-            JOIN quiz_assignments qa ON qr.assignment_id = qa.id
-            JOIN quizzes q ON qa.quiz_id = q.id
+            INNER JOIN quiz_assignments qa ON qr.assignment_id = qa.id
+            INNER JOIN quizzes q ON qa.quiz_id = q.id
             WHERE qr.student_id = $1
-            ORDER BY qr.submitted_at ASC 
+            ORDER BY qr.created_at ASC 
             LIMIT 10`;
 
         const quizTrends = await pool.query(query, [studentId]);
         res.json({
             success: true,
-            data: {
-                quizTrends: quizTrends.rows,
-                attendanceTrends: [] 
-            }
+            data: { quizTrends: quizTrends.rows, attendanceTrends: [] }
         });
     } catch (err) {
-        console.error("DASHBOARD ANALYTICS ERROR:", err.message);
-        res.status(500).json({ 
-            success: false, 
-            error: "Analytics Error: " + err.message 
-        });
+        console.error("DASHBOARD ERROR:", err.message);
+        res.status(500).json({ success: false, error: err.message });
     }
 };
