@@ -258,20 +258,18 @@ router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) 
 });
 
 // --- 8. NEW FEATURE: SUBJECT SPECIFIC DETAILS (QUIZZES + ATTENDANCE) ---
-// Muhammad Ahmed, yeh naya route hai jo course card click par data layega
 router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res) => {
     const { courseId, studentId } = req.params;
     try {
         const col = await getAssignmentColumn();
         
-        // Quizzes logic (Done vs Pending)
+        // Muhammad Ahmed, Yahan query theek ki hai (qa.course_id use kiya hai q.course_id ki jagah)
         const quizQuery = `
-            SELECT q.title, q.total_marks, qr.score,
+            SELECT qa.title, qa.total_marks, qr.score,
             CASE WHEN qr.id IS NOT NULL THEN 'Done' ELSE 'Pending' END as status
             FROM quiz_assignments qa
-            JOIN quizzes q ON qa.quiz_id = q.id
             LEFT JOIN quiz_results qr ON qr.${col} = qa.id AND qr.student_id = $1
-            WHERE q.course_id = $2
+            WHERE qa.course_id = $2
         `;
 
         // Attendance logic for this specific course
