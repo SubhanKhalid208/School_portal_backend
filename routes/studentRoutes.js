@@ -10,7 +10,6 @@ import { sendWelcomeEmail } from '../controllers/authController.js';
 const router = express.Router();
 
 // --- 1. MULTER CONFIGURATION ---
-// Muhammad Ahmed: Profile pic ke liye hum diskStorage use karenge taake extension (.png/.jpg) sahi rahe
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
         const dir = 'uploads/';
@@ -28,7 +27,6 @@ const upload = multer({
     limits: { fileSize: 2 * 1024 * 1024 } 
 });
 
-// CSV ke liye purana temporary method barkrar hai
 const csvUpload = multer({ dest: '/tmp/' });
 
 // Helper to detect which column stores assignment reference
@@ -46,7 +44,7 @@ const getAssignmentColumn = async () => {
     return _assignmentCol;
 };
 
-// --- 2. BULK UPLOAD (Original Code) ---
+// --- 2. BULK UPLOAD ---
 router.post('/bulk-upload', verifyToken, csvUpload.single('file'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ success: false, error: "CSV file upload karna lazmi hai!" });
@@ -185,28 +183,15 @@ router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 5. PROFILE PICTURE UPLOAD (UPDATED LOGIC) ---
+// --- 5. PROFILE PICTURE UPLOAD ---
 router.post('/upload-profile-pic/:studentId', verifyToken, upload.single('profilePic'), async (req, res) => {
     const { studentId } = req.params;
-    
-    if (!req.file) {
-        return res.status(400).json({ success: false, error: "Image select karna lazmi hai!" });
-    }
+    if (!req.file) return res.status(400).json({ success: false, error: "Image select karna lazmi hai!" });
 
     try {
-        // Muhammad Ahmed: DB mein public path save kar rahe hain (e.g., /uploads/filename.jpg)
         const imagePath = `/uploads/${req.file.filename}`; 
-        
-        await pool.query(
-            "UPDATE users SET profile_pic = $1 WHERE id = $2",
-            [imagePath, studentId]
-        );
-
-        res.json({ 
-            success: true, 
-            message: "Profile picture update ho gayi!",
-            profile_pic: imagePath
-        });
+        await pool.query("UPDATE users SET profile_pic = $1 WHERE id = $2", [imagePath, studentId]);
+        res.json({ success: true, message: "Profile picture update ho gayi!", profile_pic: imagePath });
     } catch (err) {
         res.status(500).json({ success: false, error: "Upload Error: " + err.message });
     }
@@ -215,16 +200,12 @@ router.post('/upload-profile-pic/:studentId', verifyToken, upload.single('profil
 // --- 6. STUDENT ANALYTICS ---
 router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
-    if (!studentId || studentId === 'undefined' || studentId === 'null') {
-        return res.status(400).json({ success: false, error: "Invalid Student ID" });
-    }
+    if (!studentId || studentId === 'undefined' || studentId === 'null') return res.status(400).json({ success: false, error: "Invalid Student ID" });
 
     try {
         const col = await getAssignmentColumn();
         const quizResults = await pool.query(`
-            SELECT 
-                q.title as subject, 
-                qr.score, q.total_marks
+            SELECT q.title as subject, qr.score, q.total_marks
             FROM quiz_results qr
             INNER JOIN quiz_assignments qa ON qr.${col} = qa.id
             INNER JOIN quizzes q ON qa.quiz_id = q.id
@@ -257,12 +238,10 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 7. MY QUIZZES ---
+// --- 7. MY QUIZZES (All Quizzes) ---
 router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
-    if (!studentId || studentId === 'undefined' || studentId === 'null') {
-        return res.status(400).json({ success: false, error: "Student ID missing hai." });
-    }
+    if (!studentId || studentId === 'undefined' || studentId === 'null') return res.status(400).json({ success: false, error: "Student ID missing" });
     try {
         const col = await getAssignmentColumn();
         const result = await pool.query(`
@@ -272,10 +251,56 @@ router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) 
             JOIN quizzes q ON qa.quiz_id = q.id
             WHERE qr.student_id = $1
             ORDER BY qr.created_at DESC`, [studentId]);
-            
         res.json({ success: true, quizzes: result.rows });
     } catch (err) {
         res.status(500).json({ success: false, error: "Quiz fetch error: " + err.message });
+    }
+});
+
+// --- 8. NEW FEATURE: SUBJECT SPECIFIC DETAILS (QUIZZES + ATTENDANCE) ---
+// Muhammad Ahmed, yeh naya route hai jo course card click par data layega
+router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res) => {
+    const { courseId, studentId } = req.params;
+    try {
+        const col = await getAssignmentColumn();
+        
+        // Quizzes logic (Done vs Pending)
+        const quizQuery = `
+            SELECT q.title, q.total_marks, qr.score,
+            CASE WHEN qr.id IS NOT NULL THEN 'Done' ELSE 'Pending' END as status
+            FROM quiz_assignments qa
+            JOIN quizzes q ON qa.quiz_id = q.id
+            LEFT JOIN quiz_results qr ON qr.${col} = qa.id AND qr.student_id = $1
+            WHERE q.course_id = $2
+        `;
+
+        // Attendance logic for this specific course
+        const attQuery = `
+            SELECT 
+                COUNT(*) as total_classes,
+                COUNT(*) FILTER (WHERE LOWER(status) = 'present') as present_count
+            FROM attendance 
+            WHERE student_id = $1 AND course_id = $2
+        `;
+
+        const [quizzes, attendance] = await Promise.all([
+            pool.query(quizQuery, [studentId, courseId]),
+            pool.query(attQuery, [studentId, courseId])
+        ]);
+
+        res.json({
+            success: true,
+            quizzes: quizzes.rows,
+            attendance: {
+                total: parseInt(attendance.rows[0].total_classes) || 0,
+                present: parseInt(attendance.rows[0].present_count) || 0,
+                percentage: attendance.rows[0].total_classes > 0 
+                    ? Math.round((attendance.rows[0].present_count / attendance.rows[0].total_classes) * 100) 
+                    : 0
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: "Subject Details Error: " + err.message });
     }
 });
 
