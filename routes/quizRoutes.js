@@ -25,7 +25,7 @@ router.get('/questions-list/:quiz_id', verifyToken, quizController.getQuizQuesti
 // 6. Specific MCQ delete karne ke liye
 router.delete('/question/:id', verifyToken, quizController.deleteQuestion);
 
-// 7. POORA QUIZ DELETE KARNE KE LIYE (New Added)
+// 7. POORA QUIZ DELETE KARNE KE LIYE
 router.delete('/teacher/delete-quiz/:id', verifyToken, quizController.deleteQuiz);
 
 
@@ -44,5 +44,9 @@ router.post('/student/submit', verifyToken, quizController.submitQuiz);
 
 // 4. Individual result/report card dekhne ke liye
 router.get('/result/:assignment_id', verifyToken, quizController.getQuizResult);
+
+// ✅ 5. STUDENT ANALYTICS (Graph ke liye)
+// Yeh route aapke frontend ki request "localhost:5000/api/quiz/student/analytics/32" ko handle karega
+router.get('/student/analytics/:id', verifyToken, quizController.getStudentAnalytics);
 
 export default router;
