@@ -257,20 +257,20 @@ export const deleteQuiz = async (req, res) => {
     }
 };
 
-// 12. Student Dashboard Analytics (FIXED)
+// 12. Student Dashboard Analytics (FIXED FOR NEON DB)
 export const getStudentAnalytics = async (req, res) => {
     const studentId = req.params.id || req.user.id;
     try {
+        // Screenshots se confirm hua ke 'quiz_results' mein 'assignment_id' hai.
         const query = `
             SELECT 
                 q.title as label, 
                 qr.score as value
             FROM quiz_results qr
-            INNER JOIN quiz_assignments qa ON qr.student_id = qa.student_id
-            INNER JOIN quizzes q ON qa.quiz_id = q.id
+            JOIN quiz_assignments qa ON qr.assignment_id = qa.id
+            JOIN quizzes q ON qa.quiz_id = q.id
             WHERE qr.student_id = $1
-            GROUP BY q.title, qr.score, qr.submitted_at
-            ORDER BY qr.submitted_at ASC 
+            ORDER BY qr.created_at ASC 
             LIMIT 10`;
 
         const quizTrends = await pool.query(query, [studentId]);
@@ -283,7 +283,7 @@ export const getStudentAnalytics = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error("CRITICAL ANALYTICS ERROR:", err.message);
+        console.error("DASHBOARD ANALYTICS ERROR:", err.message);
         res.status(500).json({ 
             success: false, 
             error: "Analytics Error: " + err.message 
