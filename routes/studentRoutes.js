@@ -3,7 +3,7 @@ import pool from '../config/db.js';
 import multer from 'multer'; 
 import csv from 'csv-parser'; 
 import fs from 'fs'; 
-import path from 'path'; // ✅ Extension nikalne ke liye
+import path from 'path'; 
 import { verifyToken } from '../middleware/authMiddleware.js'; 
 import { sendWelcomeEmail } from '../controllers/authController.js'; 
 
@@ -60,6 +60,7 @@ router.post('/bulk-upload', verifyToken, csvUpload.single('file'), async (req, r
         })
         .on('error', (err) => {
             console.error("CSV Parsing Error:", err.message);
+            if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
             res.status(500).json({ success: false, error: "CSV file format sahi nahi hai." });
         })
         .on('end', async () => {
@@ -257,22 +258,24 @@ router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) 
     }
 });
 
-// --- 8. NEW FEATURE: SUBJECT SPECIFIC DETAILS (QUIZZES + ATTENDANCE) ---
+// --- 8. SUBJECT SPECIFIC DETAILS ---
 router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res) => {
     const { courseId, studentId } = req.params;
     try {
         const col = await getAssignmentColumn();
         
-        // Muhammad Ahmed, Yahan query theek ki hai (qa.course_id use kiya hai q.course_id ki jagah)
         const quizQuery = `
-            SELECT qa.title, qa.total_marks, qr.score,
-            CASE WHEN qr.id IS NOT NULL THEN 'Done' ELSE 'Pending' END as status
-            FROM quiz_assignments qa
+            SELECT 
+                q.title, 
+                q.total_marks, 
+                qr.score,
+                CASE WHEN qr.id IS NOT NULL THEN 'Done' ELSE 'Pending' END as status
+            FROM quizzes q
+            JOIN quiz_assignments qa ON q.id = qa.quiz_id
             LEFT JOIN quiz_results qr ON qr.${col} = qa.id AND qr.student_id = $1
-            WHERE qa.course_id = $2
+            WHERE q.course_id = $2
         `;
 
-        // Attendance logic for this specific course
         const attQuery = `
             SELECT 
                 COUNT(*) as total_classes,
@@ -298,6 +301,7 @@ router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res
             }
         });
     } catch (err) {
+        console.error("Subject Details Error:", err.message);
         res.status(500).json({ success: false, error: "Subject Details Error: " + err.message });
     }
 });
