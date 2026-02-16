@@ -4,8 +4,10 @@ import cors from 'cors';
 import passport from 'passport'; 
 import session from 'express-session'; 
 import helmet from 'helmet'; 
+import path from 'path'; 
+import fs from 'fs'; // ✅ Added to create folder
+import { fileURLToPath } from 'url'; 
 
-// Routes (Confirm karein ke ye saari files routes folder mein hain)
 import authRoutes from './routes/authRoutes.js';
 import courseRoutes from './routes/courseRoutes.js';
 import teacherRoutes from './routes/teacherRoutes.js';
@@ -15,7 +17,16 @@ import studentRoutes from './routes/studentRoutes.js';
 import quizRoutes from './routes/quizRoutes.js'; 
 import debugRoutes from './routes/debugRoutes.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
+
+// ✅ MUHAMMAD AHMED: Check karein ke uploads folder maujood hai ya nahi
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 app.set('trust proxy', 1);
 
@@ -41,7 +52,9 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Session Fix for Railway
+// ✅ Static folder link for profile pictures
+app.use('/uploads', express.static(uploadDir));
+
 app.use(session({
   secret: process.env.SESSION_SECRET || 'lahore_secret_2026',
   resave: false,
@@ -63,19 +76,14 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/teacher', teacherRoutes);
-app.use('/api/student', studentRoutes); 
+app.use('/api/student', studentRoutes); // 👈 Yeh /api/student define karta hai
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/debug', debugRoutes);
 
-app.get('/', (req, res) => res.send('🚀 Backend is Running!'));
-
-// CRITICAL: Ye crash hone se bachaye ga
-process.on('uncaughtException', (err) => {
-  console.error('There was an uncaught error', err);
-});
+app.get('/', (req, res) => res.send('🚀 Lahore Portal Backend is Running!'));
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });

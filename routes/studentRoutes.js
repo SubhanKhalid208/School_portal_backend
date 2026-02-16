@@ -3,12 +3,35 @@ import pool from '../config/db.js';
 import multer from 'multer'; 
 import csv from 'csv-parser'; 
 import fs from 'fs'; 
+import path from 'path'; // ✅ Extension nikalne ke liye
 import { verifyToken } from '../middleware/authMiddleware.js'; 
 import { sendWelcomeEmail } from '../controllers/authController.js'; 
 
 const router = express.Router();
 
-// Helper to detect which column stores assignment reference in quiz_results
+// --- 1. MULTER CONFIGURATION ---
+// Muhammad Ahmed: Profile pic ke liye hum diskStorage use karenge taake extension (.png/.jpg) sahi rahe
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        const dir = 'uploads/';
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+        cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, 'profile-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({ 
+    storage: storage, 
+    limits: { fileSize: 2 * 1024 * 1024 } 
+});
+
+// CSV ke liye purana temporary method barkrar hai
+const csvUpload = multer({ dest: '/tmp/' });
+
+// Helper to detect which column stores assignment reference
 let _assignmentCol = null;
 const getAssignmentColumn = async () => {
     if (_assignmentCol) return _assignmentCol;
@@ -23,11 +46,8 @@ const getAssignmentColumn = async () => {
     return _assignmentCol;
 };
 
-// Production (Railway) ke liye /tmp folder
-const upload = multer({ dest: '/tmp/' });
-
-// --- 1. BULK UPLOAD ---
-router.post('/bulk-upload', verifyToken, upload.single('file'), async (req, res) => {
+// --- 2. BULK UPLOAD (Original Code) ---
+router.post('/bulk-upload', verifyToken, csvUpload.single('file'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ success: false, error: "CSV file upload karna lazmi hai!" });
     }
@@ -95,7 +115,7 @@ router.post('/bulk-upload', verifyToken, upload.single('file'), async (req, res)
         });
 });
 
-// --- 2. FETCH ENROLLED COURSES ---
+// --- 3. FETCH ENROLLED COURSES ---
 router.get('/my-courses/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     if (!studentId || studentId === 'undefined' || studentId === 'null') return res.status(400).json({ error: "ID missing" });
@@ -114,7 +134,7 @@ router.get('/my-courses/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 3. ATTENDANCE STATS ---
+// --- 4. ATTENDANCE STATS ---
 router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     if (!studentId || studentId === 'undefined' || studentId === 'null') {
@@ -123,14 +143,24 @@ router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     try {
         const statsResult = await pool.query(`
             SELECT 
-                COUNT(*) as total_days,
-                COUNT(*) FILTER (WHERE LOWER(status) = 'present') as present_days
-            FROM attendance WHERE student_id = $1`, 
+                u.name as student_name,
+                u.profile_pic as student_image,
+                COUNT(a.id) as total_days,
+                COUNT(a.id) FILTER (WHERE LOWER(a.status) = 'present') as present_days
+            FROM users u
+            LEFT JOIN attendance a ON u.id = a.student_id
+            WHERE u.id = $1
+            GROUP BY u.id`, 
             [studentId]
         );
 
-        const present = parseInt(statsResult.rows[0].present_days) || 0;
-        const total = parseInt(statsResult.rows[0].total_days) || 0;
+        if (statsResult.rows.length === 0) {
+            return res.status(404).json({ success: false, error: "Student record nahi mila." });
+        }
+
+        const row = statsResult.rows[0];
+        const present = parseInt(row.present_days) || 0;
+        const total = parseInt(row.total_days) || 0;
         const percentage = total > 0 ? Math.round((present / total) * 100) : 0;
 
         const historyResult = await pool.query(`
@@ -142,6 +172,8 @@ router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
         res.json({
             success: true,
             data: {
+                studentName: row.student_name,
+                profile_pic: row.student_image,
                 attendancePercentage: percentage,
                 totalPresent: present,
                 totalDays: total,
@@ -153,7 +185,34 @@ router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 4. STUDENT ANALYTICS ---
+// --- 5. PROFILE PICTURE UPLOAD (UPDATED LOGIC) ---
+router.post('/upload-profile-pic/:studentId', verifyToken, upload.single('profilePic'), async (req, res) => {
+    const { studentId } = req.params;
+    
+    if (!req.file) {
+        return res.status(400).json({ success: false, error: "Image select karna lazmi hai!" });
+    }
+
+    try {
+        // Muhammad Ahmed: DB mein public path save kar rahe hain (e.g., /uploads/filename.jpg)
+        const imagePath = `/uploads/${req.file.filename}`; 
+        
+        await pool.query(
+            "UPDATE users SET profile_pic = $1 WHERE id = $2",
+            [imagePath, studentId]
+        );
+
+        res.json({ 
+            success: true, 
+            message: "Profile picture update ho gayi!",
+            profile_pic: imagePath
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, error: "Upload Error: " + err.message });
+    }
+});
+
+// --- 6. STUDENT ANALYTICS ---
 router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     if (!studentId || studentId === 'undefined' || studentId === 'null') {
@@ -161,7 +220,6 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 
     try {
-        // Neon DB Sync: quiz_id aur created_at ka istemal
         const col = await getAssignmentColumn();
         const quizResults = await pool.query(`
             SELECT 
@@ -199,14 +257,13 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     }
 });
 
-// --- 5. MY QUIZZES ---
+// --- 7. MY QUIZZES ---
 router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     if (!studentId || studentId === 'undefined' || studentId === 'null') {
         return res.status(400).json({ success: false, error: "Student ID missing hai." });
     }
     try {
-        // Fix: qr.quiz_id aur qr.created_at ka istemal
         const col = await getAssignmentColumn();
         const result = await pool.query(`
             SELECT qr.*, q.title as quiz_title 
