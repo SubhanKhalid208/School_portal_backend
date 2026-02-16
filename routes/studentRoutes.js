@@ -8,6 +8,21 @@ import { sendWelcomeEmail } from '../controllers/authController.js';
 
 const router = express.Router();
 
+// Helper to detect which column stores assignment reference in quiz_results
+let _assignmentCol = null;
+const getAssignmentColumn = async () => {
+    if (_assignmentCol) return _assignmentCol;
+    try {
+        const res = await pool.query(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='quiz_results' AND column_name IN ('assignment_id','quiz_assignment_id','assignmentid') LIMIT 1"
+        );
+        _assignmentCol = res.rows[0]?.column_name || 'assignment_id';
+    } catch (err) {
+        _assignmentCol = 'assignment_id';
+    }
+    return _assignmentCol;
+};
+
 // Production (Railway) ke liye /tmp folder
 const upload = multer({ dest: '/tmp/' });
 
@@ -147,12 +162,14 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
 
     try {
         // Neon DB Sync: quiz_id aur created_at ka istemal
+        const col = await getAssignmentColumn();
         const quizResults = await pool.query(`
             SELECT 
                 q.title as subject, 
                 qr.score, q.total_marks
             FROM quiz_results qr
-            INNER JOIN quizzes q ON qr.quiz_id = q.id 
+            INNER JOIN quiz_assignments qa ON qr.${col} = qa.id
+            INNER JOIN quizzes q ON qa.quiz_id = q.id
             WHERE qr.student_id = $1
             ORDER BY qr.created_at ASC`, [studentId]
         );
@@ -190,10 +207,12 @@ router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) 
     }
     try {
         // Fix: qr.quiz_id aur qr.created_at ka istemal
+        const col = await getAssignmentColumn();
         const result = await pool.query(`
             SELECT qr.*, q.title as quiz_title 
             FROM quiz_results qr
-            JOIN quizzes q ON qr.quiz_id = q.id
+            JOIN quiz_assignments qa ON qr.${col} = qa.id
+            JOIN quizzes q ON qa.quiz_id = q.id
             WHERE qr.student_id = $1
             ORDER BY qr.created_at DESC`, [studentId]);
             

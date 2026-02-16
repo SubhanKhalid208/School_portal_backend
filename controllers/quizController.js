@@ -243,13 +243,13 @@ export const deleteQuiz = async (req, res) => {
 export const getStudentAnalytics = async (req, res) => {
     const studentId = req.params.id || req.user.id;
     try {
-        // Muhammad Ahmed, maine yahan direct column names likh diye hain
+        const col = await getAssignmentColumn();
         const query = `
             SELECT 
                 q.title as label, 
                 qr.score as value
             FROM quiz_results qr
-            INNER JOIN quiz_assignments qa ON qr.assignment_id = qa.id
+            INNER JOIN quiz_assignments qa ON qr.${col} = qa.id
             INNER JOIN quizzes q ON qa.quiz_id = q.id
             WHERE qr.student_id = $1
             ORDER BY qr.created_at ASC 
