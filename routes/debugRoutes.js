@@ -1,6 +1,7 @@
 import express from 'express';
 import { sendWelcomeEmail } from '../controllers/authController.js';
 import { transporter } from '../config/mail.js';
+import pool from '../config/db.js';
 
 const router = express.Router();
 
@@ -95,3 +96,16 @@ router.get('/send-test-email', async (req, res) => {
 });
 
 export default router;
+
+// Helper debug route: Detect assignment column used in quiz_results
+router.get('/quiz-assignment-col', async (req, res) => {
+  try {
+    const ADMIN_SECRET = process.env.ADMIN_SECRET || "lahore_portal_786";
+    if (req.query.key && req.query.key !== ADMIN_SECRET) return res.status(401).json({ error: 'Unauthorized' });
+    const result = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name='quiz_results' AND column_name IN ('assignment_id','quiz_assignment_id','assignmentid','quiz_id') LIMIT 1");
+    const col = result.rows[0]?.column_name || null;
+    res.json({ success: true, column: col });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
