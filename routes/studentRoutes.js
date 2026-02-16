@@ -258,43 +258,39 @@ router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) 
     }
 });
 
-// --- 8. SUBJECT SPECIFIC DETAILS (FILTERED) ---
+// --- 8. SUBJECT SPECIFIC DETAILS ---
 router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res) => {
     const { courseId, studentId } = req.params;
-    
-    if (!courseId || courseId === 'undefined') {
-        return res.status(400).json({ success: false, error: "Course ID missing hai" });
-    }
-
     try {
         const col = await getAssignmentColumn();
         
-        // Filter lag gaya: Sirf wahi quizzes jo is specific courseId se hain
+        // First get all quiz IDs for quizzes assigned to this student
         const quizQuery = `
             SELECT 
                 q.id,
                 q.title, 
                 q.total_marks, 
                 qr.score,
+                qr.status,
                 CASE WHEN qr.id IS NOT NULL THEN 'Done' ELSE 'Pending' END as quiz_status
             FROM quizzes q
             JOIN quiz_assignments qa ON q.id = qa.quiz_id
             LEFT JOIN quiz_results qr ON qr.${col} = qa.id AND qr.student_id = $1
-            WHERE q.course_id = $2
+            WHERE qa.student_id = $1
+            LIMIT 10
         `;
 
-        // Filter lag gaya: Attendance sirf is student aur is subject ki
         const attQuery = `
             SELECT 
                 COUNT(*) as total_classes,
                 COUNT(*) FILTER (WHERE LOWER(status) = 'present') as present_count
             FROM attendance 
-            WHERE student_id = $1 AND course_id = $2
+            WHERE student_id = $1
         `;
 
         const [quizzes, attendance] = await Promise.all([
-            pool.query(quizQuery, [studentId, courseId]),
-            pool.query(attQuery, [studentId, courseId])
+            pool.query(quizQuery, [studentId]),
+            pool.query(attQuery, [studentId])
         ]);
 
         const presentCount = parseInt(attendance.rows[0]?.present_count) || 0;
