@@ -22,7 +22,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// ✅ Uploads folder setup
+// ✅ Ensure uploads folder exists
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -70,13 +70,12 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// --- Routes setup ---
+// --- 🚀 Routes Setup (MUHAMMAD AHMED: Ghaur se dekhein) ---
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
 
-// ✅ FIX: Muhammad Ahmed, yahan dono likh diye hain 
-// taake frontend agar 'teacher' call kare ya 'teachers', dono kaam karein.
+// Yahan dono spellings handle kar di hain
 app.use('/api/teacher', teacherRoutes); 
 app.use('/api/teachers', teacherRoutes); 
 
