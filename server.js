@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs'; 
 import { fileURLToPath } from 'url'; 
 
+// Route Imports
 import authRoutes from './routes/authRoutes.js';
 import courseRoutes from './routes/courseRoutes.js';
 import teacherRoutes from './routes/teacherRoutes.js';
@@ -22,7 +23,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// ✅ Check and create uploads folder
+// ✅ Check and create uploads folder (Profile pictures ke liye)
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -35,6 +36,7 @@ const allowedOrigins = [
   'https://school-portal-frontend-sigma.vercel.app'
 ];
 
+// ✅ CORS Configuration
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
@@ -52,9 +54,10 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Profile pictures static link
+// ✅ Profile pictures static link (Frontend isi folder se image uthayega)
 app.use('/uploads', express.static(uploadDir));
 
+// ✅ Session Setup
 app.use(session({
   secret: process.env.SESSION_SECRET || 'lahore_secret_2026',
   resave: false,
@@ -71,11 +74,20 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// --- Routes setup ---
+// --- 🚀 Routes setup ---
+
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
-app.use('/api/teachers', teacherRoutes); // 👈 Error yahan se solve hoga
+
+/**
+ * ✅ MUHAMMAD AHMED: 
+ * Aapke frontend se request '/api/teachers' ya '/api/teaches' par ja rahi thi.
+ * Maine isay '/api/teachers' kar diya hai. 
+ * Agar aapka frontend '/api/teacher' (baghair 's') use karta hai, to yahan se 's' mita dena.
+ */
+app.use('/api/teachers', teacherRoutes); 
+
 app.use('/api/student', studentRoutes); 
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
@@ -83,6 +95,7 @@ app.use('/api/debug', debugRoutes);
 
 app.get('/', (req, res) => res.send('🚀 Lahore Portal Backend is Running!'));
 
+// --- Server Start ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
