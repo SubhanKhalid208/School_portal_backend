@@ -6,7 +6,7 @@ import fs from 'fs';
 import path from 'path'; 
 import { verifyToken } from '../middleware/authMiddleware.js'; 
 import { sendWelcomeEmail } from '../controllers/authController.js'; 
-import { upload } from '../config/multer.js'; // ✅ Import shared multer config
+import { upload } from '../config/multer.js'; // ✅ Shared multer config
 
 const router = express.Router();
 
@@ -241,13 +241,13 @@ router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) 
     }
 });
 
-// --- 8. SUBJECT SPECIFIC DETAILS ---
+// --- 8. SUBJECT SPECIFIC DETAILS (Fixed Columns for Muhammad Ahmed) ---
 router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res) => {
     const { courseId, studentId } = req.params;
     try {
         const col = await getAssignmentColumn();
         
-        // First get all quiz IDs for quizzes assigned to this student
+        // Quizzes table has 'subject_id' according to your screenshot
         const quizQuery = `
             SELECT 
                 q.id,
@@ -259,21 +259,23 @@ router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res
             FROM quizzes q
             JOIN quiz_assignments qa ON q.id = qa.quiz_id
             LEFT JOIN quiz_results qr ON qr.${col} = qa.id AND qr.student_id = $1
-            WHERE qa.student_id = $1
+            WHERE qa.student_id = $1 AND q.subject_id = $2
+            ORDER BY q.created_at DESC
             LIMIT 10
         `;
 
+        // Attendance table has 'course_id' according to your screenshot
         const attQuery = `
             SELECT 
                 COUNT(*) as total_classes,
                 COUNT(*) FILTER (WHERE LOWER(status) = 'present') as present_count
             FROM attendance 
-            WHERE student_id = $1
+            WHERE student_id = $1 AND course_id = $2
         `;
 
         const [quizzes, attendance] = await Promise.all([
-            pool.query(quizQuery, [studentId]),
-            pool.query(attQuery, [studentId])
+            pool.query(quizQuery, [studentId, courseId]),
+            pool.query(attQuery, [studentId, courseId])
         ]);
 
         const presentCount = parseInt(attendance.rows[0]?.present_count) || 0;
