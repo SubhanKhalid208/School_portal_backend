@@ -6,6 +6,7 @@ import * as teacherController from '../controllers/teacherController.js';
 // ✅ JWT Middleware Import karein
 // Yaad rahe Railway ke liye extension .js lazmi hai
 import { verifyToken } from '../middleware/authMiddleware.js';
+import { upload } from '../config/multer.js'; // ✅ Add multer import
 
 // Sabhi routes ko protect karne ke liye hum global middleware bhi laga sakte hain
 // Ya har route par alag se (niche wala tarika behtar hai)
@@ -112,5 +113,19 @@ router.get('/students', verifyToken, async (req, res) => {
 });
 
 router.post('/attendance/mark', verifyToken, teacherController.markAttendance);
+
+// --- 4. TEACHER PROFILE PICTURE UPLOAD ---
+router.post('/upload-profile-pic/:teacherId', verifyToken, upload.single('profilePic'), async (req, res) => {
+    const { teacherId } = req.params;
+    if (!req.file) return res.status(400).json({ success: false, error: "Image select karna lazmi hai!" });
+
+    try {
+        const imagePath = `/uploads/${req.file.filename}`; 
+        await pool.query("UPDATE users SET profile_pic = $1 WHERE id = $2", [imagePath, teacherId]);
+        res.json({ success: true, message: "Profile picture update ho gayi!", profile_pic: imagePath });
+    } catch (err) {
+        res.status(500).json({ success: false, error: "Upload Error: " + err.message });
+    }
+});
 
 export default router;
