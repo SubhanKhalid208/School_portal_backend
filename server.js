@@ -75,7 +75,7 @@ app.use(passport.session());
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
-app.use('/api/teacher', teacherRoutes); // 👈 Error yahan se solve hoga
+app.use('/api/teachers', teacherRoutes); // 👈 Error yahan se solve hoga
 app.use('/api/student', studentRoutes); 
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
