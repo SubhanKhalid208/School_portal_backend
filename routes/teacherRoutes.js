@@ -1,57 +1,20 @@
 import express from 'express';
 import pool from '../config/db.js';
-import multer from 'multer';
-import path from 'path';
+const router = express.Router();
 import * as teacherController from '../controllers/teacherController.js';
 
-// ✅ JWT Middleware Import
+// ✅ JWT Middleware Import karein
+// Yaad rahe Railway ke liye extension .js lazmi hai
 import { verifyToken } from '../middleware/authMiddleware.js';
 
-const router = express.Router();
+// Sabhi routes ko protect karne ke liye hum global middleware bhi laga sakte hain
+// Ya har route par alag se (niche wala tarika behtar hai)
 
-// --- 🚀 MULTER SETUP ---
-const storage = multer.diskStorage({
-    destination: 'uploads/',
-    filename: (req, file, cb) => {
-        // Unique filename with timestamp
-        cb(null, `teacher-${Date.now()}${path.extname(file.originalname)}`);
-    }
-});
-
-const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB Limit
-});
-
-// --- 1. PROFILE PICTURE UPLOAD ROUTE ---
-router.post('/upload-profile-pic/:id', upload.single('profilePic'), async (req, res) => {
-    try {
-        const teacherId = req.params.id;
-        
-        if (!req.file) {
-            return res.status(400).json({ success: false, message: 'Koi file select nahi ki gayi.' });
-        }
-
-        const filePath = `/uploads/${req.file.filename}`;
-
-        // Database update
-        const updateQuery = 'UPDATE users SET profile_pic = $1 WHERE id = $2';
-        await pool.query(updateQuery, [filePath, teacherId]);
-
-        // ✅ Muhammad Ahmed: Yahan 'profile_pic' key bhej raha hoon taake frontend display kar sakay
-        res.status(200).json({ 
-            success: true, 
-            message: 'Profile picture Lahore portal par update ho gayi!',
-            profile_pic: filePath 
-        });
-    } catch (err) {
-        console.error("❌ Upload Error:", err.message);
-        res.status(500).json({ success: false, error: "Server error: Image save nahi ho saki." });
-    }
-});
-
-// --- 2. GET DASHBOARD STATS (Secure) ---
+// --- 1. GET DASHBOARD STATS (Secure) ---
+// Pehle: /stats?teacherId=3
+// Ab: /stats (ID token se khud nikal aayegi)
 router.get('/stats', verifyToken, async (req, res) => {
+    // verifyToken middleware ne 'req.user' set kar diya hai
     const teacherId = req.user.id; 
 
     try {
@@ -76,7 +39,7 @@ router.get('/stats', verifyToken, async (req, res) => {
     }
 });
 
-// --- 3. MANAGE COURSES (Secure CRUD) ---
+// --- 2. MANAGE COURSES (Secure CRUD) ---
 router.get('/my-courses', verifyToken, async (req, res) => {
     const teacherId = req.user.id; 
 
@@ -93,7 +56,7 @@ router.get('/my-courses', verifyToken, async (req, res) => {
 
 router.post('/courses/add', verifyToken, async (req, res) => {
     const { title, description } = req.body;
-    const teacher_id = req.user.id;
+    const teacher_id = req.user.id; // User ID manually bhejne ki zaroorat nahi
 
     if (!title) return res.status(400).json({ error: "Title lazmi hai." });
 
@@ -114,6 +77,7 @@ router.put('/courses/:id', verifyToken, async (req, res) => {
     const teacherId = req.user.id;
 
     try {
+        // Sirf wahi teacher update kar sake jis ka course hai
         const result = await pool.query(
             "UPDATE courses SET title = $1, description = $2 WHERE id = $3 AND teacher_id = $4 RETURNING *",
             [title, description, id, teacherId]
@@ -137,7 +101,7 @@ router.delete('/courses/:id', verifyToken, async (req, res) => {
     }
 });
 
-// --- 4. ATTENDANCE & STUDENTS ---
+// --- 3. ATTENDANCE & STUDENTS (Protected) ---
 router.get('/students', verifyToken, async (req, res) => {
     try {
         const result = await pool.query('SELECT id, name, email FROM users WHERE LOWER(role) = \'student\' ORDER BY name ASC');
