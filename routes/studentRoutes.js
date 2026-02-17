@@ -242,13 +242,14 @@ router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) 
 });
 
 // --- 8. SUBJECT SPECIFIC DETAILS (Final Verified Fix) ---
+// --- 8. SUBJECT SPECIFIC DETAILS (Corrected for Neon Database) ---
 router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res) => {
     const { courseId, studentId } = req.params;
     try {
         const col = await getAssignmentColumn();
         
-        // Is query mein se humne 'qr.quiz_id' hata diya hai kyunke aapke database mein woh column nahi hai
-        // Yeh query ab bilkul wahi column use karegi jo detect honge (assignment_id wagaira)
+        // Error Fix: 'qr.quiz_id' ko remove kar diya gaya hai kyunke yeh DB mein nahi hai.
+        // Hum sirf dynamic assignment column (jo detect hua hai) use kar rahe hain.
         const quizQuery = `
             SELECT 
                 q.id, q.title, q.total_marks, 
