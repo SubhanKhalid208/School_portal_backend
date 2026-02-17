@@ -5,7 +5,7 @@ import passport from 'passport';
 import session from 'express-session'; 
 import helmet from 'helmet'; 
 import path from 'path'; 
-import fs from 'fs'; 
+import fs from 'fs'; // ✅ Added to create folder
 import { fileURLToPath } from 'url'; 
 
 import authRoutes from './routes/authRoutes.js';
@@ -22,7 +22,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 
-// ✅ Check and create uploads folder
+// ✅ MUHAMMAD AHMED: Check karein ke uploads folder maujood hai ya nahi
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -52,7 +52,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Profile pictures static link
+// ✅ Static folder link for profile pictures
 app.use('/uploads', express.static(uploadDir));
 
 app.use(session({
@@ -71,12 +71,12 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// --- Routes setup ---
+// Routes setup
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
-app.use('/api/teachers', teacherRoutes); // 👈 Error yahan se solve hoga
-app.use('/api/student', studentRoutes); 
+app.use('/api/teacher', teacherRoutes);
+app.use('/api/student', studentRoutes); // 👈 Yeh /api/student define karta hai
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/debug', debugRoutes);
