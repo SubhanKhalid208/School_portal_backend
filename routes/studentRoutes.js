@@ -292,5 +292,5 @@ router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res
         res.status(500).json({ success: false, error: "Subject Details Error: " + err.message });
     }
 });
-
+//export the router
 export default router;
