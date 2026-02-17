@@ -9,10 +9,11 @@ import { verifyToken } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// --- 🚀 MULTER SETUP (Muhammad Ahmed: Profile Pic ke liye lazmi hai) ---
+// --- 🚀 MULTER SETUP ---
 const storage = multer.diskStorage({
     destination: 'uploads/',
     filename: (req, file, cb) => {
+        // Unique filename with timestamp
         cb(null, `teacher-${Date.now()}${path.extname(file.originalname)}`);
     }
 });
@@ -22,8 +23,7 @@ const upload = multer({
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB Limit
 });
 
-// --- 1. PROFILE PICTURE UPLOAD ROUTE (MUHAMMAD AHMED: Yeh missing tha) ---
-// Frontend call: /api/teacher/upload-profile-pic/31
+// --- 1. PROFILE PICTURE UPLOAD ROUTE ---
 router.post('/upload-profile-pic/:id', upload.single('profilePic'), async (req, res) => {
     try {
         const teacherId = req.params.id;
@@ -34,14 +34,15 @@ router.post('/upload-profile-pic/:id', upload.single('profilePic'), async (req, 
 
         const filePath = `/uploads/${req.file.filename}`;
 
-        // Database update (PostgreSQL query format)
+        // Database update
         const updateQuery = 'UPDATE users SET profile_pic = $1 WHERE id = $2';
         await pool.query(updateQuery, [filePath, teacherId]);
 
+        // ✅ Muhammad Ahmed: Yahan 'profile_pic' key bhej raha hoon taake frontend display kar sakay
         res.status(200).json({ 
             success: true, 
             message: 'Profile picture Lahore portal par update ho gayi!',
-            path: filePath 
+            profile_pic: filePath 
         });
     } catch (err) {
         console.error("❌ Upload Error:", err.message);
