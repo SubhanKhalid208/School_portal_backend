@@ -37,12 +37,11 @@ export const assignToStudent = async (req, res) => {
     }
 };
 
-// 3. Student: Submit Quiz (Fixed assignment_id column)
+// 3. Student: Submit Quiz (FIXED PASS/FAIL LOGIC)
 export const submitQuiz = async (req, res) => {
     const { assignment_id, answers } = req.body; 
     const studentId = req.user.id;
     try {
-        // Check if already submitted using fixed column
         const alreadySubmitted = await pool.query(
             "SELECT id FROM quiz_results WHERE assignment_id = $1 AND student_id = $2",
             [assignment_id, studentId]
@@ -66,14 +65,19 @@ export const submitQuiz = async (req, res) => {
             }
         });
 
+        // MUHAMMAD AHMED: Fetching passing marks strictly
         const quizInfo = await pool.query(
             "SELECT passing_marks FROM quizzes WHERE id = (SELECT quiz_id FROM quiz_assignments WHERE id = $1)", 
             [assignment_id]
         );
-        const passingMarks = quizInfo.rows[0]?.passing_marks || 0;
-        const status = score >= passingMarks ? 'PASS' : 'FAIL';
+        
+        // Logical Fix: Ensure numbers are compared
+        const dbPassingMarks = parseInt(quizInfo.rows[0]?.passing_marks);
+        const finalPassingMarks = isNaN(dbPassingMarks) ? 0 : dbPassingMarks;
+        
+        // Strict Comparison
+        const status = score >= finalPassingMarks ? 'PASS' : 'FAIL';
 
-        // Insert using fixed assignment_id column
         const insertSQL = `INSERT INTO quiz_results (assignment_id, student_id, score, total_marks, status) VALUES ($1, $2, $3, $4, $5)`;
         await pool.query(insertSQL, [assignment_id, studentId, score, totalMarks, status]);
         
@@ -160,7 +164,7 @@ export const getAllQuizzes = async (req, res) => {
     }
 };
 
-// 8. Teacher: Get Results (Hard-fixed for Neon Production)
+// 8. Teacher: Get Results (Fixed column error)
 export const getTeacherQuizResults = async (req, res) => {
     const { quiz_id } = req.params;
     const teacherId = req.user.id;
@@ -177,7 +181,6 @@ export const getTeacherQuizResults = async (req, res) => {
         const result = await pool.query(query, [quiz_id, teacherId]);
         res.json(result.rows);
     } catch (err) {
-        console.error("Teacher Panel Error:", err.message);
         res.status(500).json({ error: "Results load nahi ho sakay: " + err.message });
     }
 };
@@ -212,7 +215,7 @@ export const deleteQuestion = async (req, res) => {
     }
 };
 
-// 11. Teacher: Delete Entire Quiz (Cascading manually to ensure safety)
+// 11. Teacher: Delete Entire Quiz
 export const deleteQuiz = async (req, res) => {
     try {
         const { id } = req.params;
@@ -220,7 +223,6 @@ export const deleteQuiz = async (req, res) => {
         const check = await pool.query("SELECT id FROM quizzes WHERE id = $1 AND created_by = $2", [id, teacherId]);
         if (check.rows.length === 0) return res.status(403).json({ error: "Unauthorized" });
 
-        // Step-by-step cleanup using fixed assignment_id column
         await pool.query(`DELETE FROM quiz_results WHERE assignment_id IN (SELECT id FROM quiz_assignments WHERE quiz_id = $1)`, [id]);
         await pool.query("DELETE FROM quiz_assignments WHERE quiz_id = $1", [id]);
         await pool.query("DELETE FROM questions WHERE quiz_id = $1", [id]);
@@ -232,7 +234,7 @@ export const deleteQuiz = async (req, res) => {
     }
 };
 
-// 12. Student Dashboard Analytics (Hard-fixed order and limit)
+// 12. Student Dashboard Analytics
 export const getStudentAnalytics = async (req, res) => {
     const studentId = req.params.id || req.user.id;
     try {
@@ -256,7 +258,6 @@ export const getStudentAnalytics = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error("DASHBOARD ANALYTICS ERROR:", err.message);
         res.status(500).json({ success: false, error: err.message });
     }
 };
