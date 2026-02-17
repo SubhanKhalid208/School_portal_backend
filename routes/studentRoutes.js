@@ -241,13 +241,14 @@ router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) 
     }
 });
 
-// --- 8. SUBJECT SPECIFIC DETAILS (Final Optimized for Muhammad Ahmed) ---
+// --- 8. SUBJECT SPECIFIC DETAILS (Final Verified Fix) ---
 router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res) => {
     const { courseId, studentId } = req.params;
     try {
         const col = await getAssignmentColumn();
         
-        // Flexible Quiz Query: Course ID se quizzes uthayga aur student results ko join karega
+        // Is query mein se humne 'qr.quiz_id' hata diya hai kyunke aapke database mein woh column nahi hai
+        // Yeh query ab bilkul wahi column use karegi jo detect honge (assignment_id wagaira)
         const quizQuery = `
             SELECT 
                 q.id, q.title, q.total_marks, 
@@ -255,7 +256,7 @@ router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res
                 CASE WHEN qr.id IS NOT NULL THEN 'Done' ELSE 'Pending' END as quiz_status
             FROM quizzes q
             LEFT JOIN quiz_assignments qa ON q.id = qa.quiz_id
-            LEFT JOIN quiz_results qr ON (qr.${col} = qa.id OR qr.quiz_id = q.id) AND qr.student_id = $1
+            LEFT JOIN quiz_results qr ON qr.${col} = qa.id AND qr.student_id = $1
             WHERE q.subject_id = $2
             ORDER BY q.created_at DESC
             LIMIT 10
