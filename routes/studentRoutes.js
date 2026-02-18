@@ -12,7 +12,7 @@ const router = express.Router();
 
 const csvUpload = multer({ dest: '/tmp/' });
 
-// Helper to detect which column stores assignment reference
+// --- 1. HELPER TO DETECT COLUMN ---
 let _assignmentCol = null;
 const getAssignmentColumn = async () => {
     if (_assignmentCol) return _assignmentCol;
@@ -29,64 +29,36 @@ const getAssignmentColumn = async () => {
 
 // --- 2. BULK UPLOAD ---
 router.post('/bulk-upload', verifyToken, csvUpload.single('file'), async (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ success: false, error: "CSV file upload karna lazmi hai!" });
-    }
-
+    if (!req.file) return res.status(400).json({ success: false, error: "CSV file upload karna lazmi hai!" });
     const students = [];
     const filePath = req.file.path;
-
     fs.createReadStream(filePath)
         .pipe(csv())
-        .on('data', (data) => {
-            if (data.email) students.push(data);
-        })
+        .on('data', (data) => { if (data.email) students.push(data); })
         .on('error', (err) => {
-            console.error("CSV Parsing Error:", err.message);
             if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-            res.status(500).json({ success: false, error: "CSV file format sahi nahi hai." });
+            res.status(500).json({ success: false, error: "CSV error" });
         })
         .on('end', async () => {
-            if (students.length === 0) {
-                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-                return res.status(400).json({ success: false, error: "CSV file khali hai!" });
-            }
-
             const client = await pool.connect(); 
             try {
                 await client.query('BEGIN'); 
                 let count = 0;
-
                 for (const student of students) {
-                    const { email, dob, name } = student;
-                    const cleanEmail = email.trim().toLowerCase();
-
+                    const cleanEmail = student.email.trim().toLowerCase();
                     const checkUser = await client.query("SELECT id FROM users WHERE email = $1", [cleanEmail]);
-                    
                     if (checkUser.rows.length === 0) {
                         const insertResult = await client.query(
                             'INSERT INTO users (email, role, is_approved, dob, name, password) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-                            [cleanEmail, 'student', true, dob || null, name || 'Student', 'student123']
+                            [cleanEmail, 'student', true, student.dob || null, student.name || 'Student', 'student123']
                         );
-                        
                         const newUserId = insertResult.rows[0].id;
-
-                        await client.query(
-                            'INSERT INTO student_courses (student_id, course_id) SELECT $1, id FROM courses ON CONFLICT DO NOTHING',
-                            [newUserId]
-                        );
-
-                        if (typeof sendWelcomeEmail === 'function') {
-                            sendWelcomeEmail(cleanEmail, newUserId).catch(e => console.error("Mail Error:", e.message));
-                        }
-                        
+                        await client.query('INSERT INTO student_courses (student_id, course_id) SELECT $1, id FROM courses ON CONFLICT DO NOTHING', [newUserId]);
                         count++;
                     }
                 }
-                
                 await client.query('COMMIT'); 
-                res.json({ success: true, message: `Lahore Portal: ${count} students enroll ho gaye!` });
-
+                res.json({ success: true, message: `Lahore Portal: ${count} students added!` });
             } catch (err) {
                 await client.query('ROLLBACK'); 
                 res.status(500).json({ success: false, error: err.message });
@@ -100,103 +72,62 @@ router.post('/bulk-upload', verifyToken, csvUpload.single('file'), async (req, r
 // --- 3. FETCH ENROLLED COURSES ---
 router.get('/my-courses/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
-    if (!studentId || studentId === 'undefined' || studentId === 'null') return res.status(400).json({ error: "ID missing" });
-
     try {
         const result = await pool.query(
-            `SELECT c.id, c.title as subject_name, c.description 
-             FROM student_courses sc
-             JOIN courses c ON sc.course_id = c.id
-             WHERE sc.student_id = $1`,
-            [studentId]
+            `SELECT c.id, c.title as subject_name, c.description FROM student_courses sc JOIN courses c ON sc.course_id = c.id WHERE sc.student_id = $1`, [studentId]
         );
         res.json({ success: true, courses: result.rows });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
 // --- 4. ATTENDANCE STATS ---
 router.get('/attendance/student/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
-    if (!studentId || studentId === 'undefined' || studentId === 'null') {
-        return res.status(400).json({ success: false, error: "Student ID missing hai." });
-    }
     try {
         const statsResult = await pool.query(`
-            SELECT 
-                u.name as student_name,
-                u.profile_pic as student_image,
-                COUNT(a.id) as total_days,
-                COUNT(a.id) FILTER (WHERE LOWER(a.status) = 'present') as present_days
-            FROM users u
-            LEFT JOIN attendance a ON u.id = a.student_id
-            WHERE u.id = $1
-            GROUP BY u.id`, 
-            [studentId]
-        );
-
-        if (statsResult.rows.length === 0) {
-            return res.status(404).json({ success: false, error: "Student record nahi mila." });
-        }
-
-        const row = statsResult.rows[0];
+            SELECT u.name as student_name, u.profile_pic as student_image, COUNT(a.id) as total_days, COUNT(a.id) FILTER (WHERE LOWER(a.status) = 'present') as present_days
+            FROM users u LEFT JOIN attendance a ON u.id = a.student_id WHERE u.id = $1 GROUP BY u.id`, [studentId]);
+        const row = statsResult.rows[0] || {};
         const present = parseInt(row.present_days) || 0;
         const total = parseInt(row.total_days) || 0;
-        const percentage = total > 0 ? Math.round((present / total) * 100) : 0;
-
-        const historyResult = await pool.query(`
-            SELECT date, status, subject_name FROM attendance 
-            WHERE student_id = $1 ORDER BY date DESC LIMIT 15`, 
-            [studentId]
-        );
-
+        const history = await pool.query(`SELECT date, status, subject_name FROM attendance WHERE student_id = $1 ORDER BY date DESC LIMIT 15`, [studentId]);
         res.json({
             success: true,
             data: {
-                studentName: row.student_name,
-                profile_pic: row.student_image,
-                attendancePercentage: percentage,
-                totalPresent: present,
-                totalDays: total,
-                history: historyResult.rows
+                studentName: row.student_name, profile_pic: row.student_image,
+                attendancePercentage: total > 0 ? Math.round((present / total) * 100) : 0,
+                totalPresent: present, totalDays: total, history: history.rows
             }
         });
-    } catch (err) {
-        res.status(500).json({ success: false, error: err.message });
-    }
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-// --- 5. PROFILE PICTURE UPLOAD ---
+// --- 5. PROFILE PICTURE ---
 router.post('/upload-profile-pic/:studentId', verifyToken, upload.single('profilePic'), async (req, res) => {
     const { studentId } = req.params;
-    if (!req.file) return res.status(400).json({ success: false, error: "Image select karna lazmi hai!" });
-
+    if (!req.file) return res.status(400).json({ success: false, error: "No image" });
     try {
         const imagePath = `/uploads/${req.file.filename}`; 
         await pool.query("UPDATE users SET profile_pic = $1 WHERE id = $2", [imagePath, studentId]);
-        res.json({ success: true, message: "Profile picture update ho gayi!", profile_pic: imagePath });
-    } catch (err) {
-        res.status(500).json({ success: false, error: "Upload Error: " + err.message });
-    }
+        res.json({ success: true, profile_pic: imagePath });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-// --- 6. STUDENT ANALYTICS ---
+// --- 6. STUDENT ANALYTICS (FIXED FOR GRAPH) ---
 router.get('/analytics/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
-    if (!studentId || studentId === 'undefined' || studentId === 'null') return res.status(400).json({ success: false, error: "Invalid Student ID" });
-
     try {
         const col = await getAssignmentColumn();
+        
+        // Quiz Data for Graph
         const quizResults = await pool.query(`
             SELECT q.title as subject, qr.score, q.total_marks
             FROM quiz_results qr
             INNER JOIN quiz_assignments qa ON qr.${col} = qa.id
             INNER JOIN quizzes q ON qa.quiz_id = q.id
-            WHERE qr.student_id = $1
-            ORDER BY qr.created_at ASC`, [studentId]
-        );
+            WHERE qr.student_id = $1`, [studentId]);
 
+        // Monthly Attendance for Graph
         const attendanceTrend = await pool.query(`
             SELECT TO_CHAR(date, 'Mon') as month,
             COUNT(*) FILTER (WHERE LOWER(status) = 'present') as present,
@@ -204,63 +135,50 @@ router.get('/analytics/:studentId', verifyToken, async (req, res) => {
             FROM attendance
             WHERE student_id = $1
             GROUP BY TO_CHAR(date, 'Mon'), EXTRACT(MONTH FROM date)
-            ORDER BY EXTRACT(MONTH FROM date)`, [studentId]
-        );
+            ORDER BY EXTRACT(MONTH FROM date)`, [studentId]);
 
-        res.json({
-            success: true,
-            data: {
+        res.json({ 
+            success: true, 
+            data: { 
                 quizTrends: quizResults.rows.map(r => ({
                     subject: r.subject,
                     percentage: r.total_marks > 0 ? Math.round((r.score / r.total_marks) * 100) : 0
                 })),
-                attendanceTrends: attendanceTrend.rows
-            }
+                attendanceTrends: attendanceTrend.rows 
+            } 
         });
-    } catch (err) {
-        res.status(500).json({ success: false, error: "Analytics Error: " + err.message });
-    }
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-// --- 7. MY QUIZZES (All Quizzes) ---
+// --- 7. MY QUIZZES ---
 router.get('/quiz/student/my-quizzes/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
-    if (!studentId || studentId === 'undefined' || studentId === 'null') return res.status(400).json({ success: false, error: "Student ID missing" });
     try {
         const col = await getAssignmentColumn();
         const result = await pool.query(`
-            SELECT qr.*, q.title as quiz_title 
+            SELECT qr.*, q.title as quiz_title FROM quiz_results qr
+            JOIN quiz_assignments qa ON qr.${col} = qa.id
+            JOIN quizzes q ON qa.quiz_id = q.id
+            WHERE qr.student_id = $1`, [studentId]);
+        res.json({ success: true, quizzes: result.rows });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// --- 8. SUBJECT DETAILS (FIXED: NO SUBJECT FILTER) ---
+router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res) => {
+    const { studentId } = req.params; 
+    try {
+        const col = await getAssignmentColumn();
+        
+        const quizQuery = `
+            SELECT 
+                q.id, q.title, q.total_marks, qr.score, qr.status,
+                'Done' as quiz_status
             FROM quiz_results qr
             JOIN quiz_assignments qa ON qr.${col} = qa.id
             JOIN quizzes q ON qa.quiz_id = q.id
             WHERE qr.student_id = $1
-            ORDER BY qr.created_at DESC`, [studentId]);
-        res.json({ success: true, quizzes: result.rows });
-    } catch (err) {
-        res.status(500).json({ success: false, error: "Quiz fetch error: " + err.message });
-    }
-});
-
-// --- 8. SUBJECT SPECIFIC DETAILS (Final Verified Fix) ---
-// --- 8. SUBJECT SPECIFIC DETAILS (Corrected for Neon Database) ---
-router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res) => {
-    const { courseId, studentId } = req.params;
-    try {
-        const col = await getAssignmentColumn();
-        
-        // Error Fix: 'qr.quiz_id' ko remove kar diya gaya hai kyunke yeh DB mein nahi hai.
-        // Hum sirf dynamic assignment column (jo detect hua hai) use kar rahe hain.
-        const quizQuery = `
-            SELECT 
-                q.id, q.title, q.total_marks, 
-                qr.score, qr.status,
-                CASE WHEN qr.id IS NOT NULL THEN 'Done' ELSE 'Pending' END as quiz_status
-            FROM quizzes q
-            LEFT JOIN quiz_assignments qa ON q.id = qa.quiz_id
-            LEFT JOIN quiz_results qr ON qr.${col} = qa.id AND qr.student_id = $1
-            WHERE q.subject_id = $2
-            ORDER BY q.created_at DESC
-            LIMIT 10
+            ORDER BY qr.created_at DESC LIMIT 20
         `;
 
         const attQuery = `
@@ -268,30 +186,27 @@ router.get('/subject-details/:courseId/:studentId', verifyToken, async (req, res
                 COUNT(*) as total_classes,
                 COUNT(*) FILTER (WHERE LOWER(status) = 'present') as present_count
             FROM attendance 
-            WHERE student_id = $1 AND course_id = $2
+            WHERE student_id = $1
         `;
 
         const [quizzes, attendance] = await Promise.all([
-            pool.query(quizQuery, [studentId, courseId]),
-            pool.query(attQuery, [studentId, courseId])
+            pool.query(quizQuery, [studentId]),
+            pool.query(attQuery, [studentId])
         ]);
 
-        const presentCount = parseInt(attendance.rows[0]?.present_count) || 0;
-        const totalCount = parseInt(attendance.rows[0]?.total_classes) || 0;
-
+        const attRow = attendance.rows[0];
         res.json({
             success: true,
             quizzes: quizzes.rows,
             attendance: {
-                total: totalCount,
-                present: presentCount,
-                percentage: totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : 0
+                total: parseInt(attRow.total_classes) || 0,
+                present: parseInt(attRow.present_count) || 0,
+                percentage: attRow.total_classes > 0 ? Math.round((attRow.present_count / attRow.total_classes) * 100) : 0
             }
         });
     } catch (err) {
-        console.error("Subject Details Error:", err.message);
-        res.status(500).json({ success: false, error: "Subject Details Error: " + err.message });
+        res.status(500).json({ success: false, error: err.message });
     }
 });
-//export the router
+
 export default router;
