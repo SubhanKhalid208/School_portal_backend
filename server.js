@@ -17,8 +17,9 @@ import attendanceRoutes from './routes/attendanceRoutes.js';
 import studentRoutes from './routes/studentRoutes.js';
 import quizRoutes from './routes/quizRoutes.js'; 
 import debugRoutes from './routes/debugRoutes.js';
-// ✅ MUHAMMAD AHMED: Ye import missing tha 
 import resourceRoutes from './routes/resourceRoutes.js';
+// ✅ Muhammad Ahmed: Feedback routes ko properly add kiya hai
+import feedbackRoutes from './routes/feedbackRoutes.js'; 
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -55,7 +56,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Static folder link for uploads (Resources & Profile Pics)
+// ✅ Static folder link for uploads
 app.use('/uploads', express.static(uploadDir));
 
 app.use(session({
@@ -74,7 +75,8 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ✅ API Routes Setup
+// --- API Routes Setup ---
+
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
@@ -84,10 +86,16 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/debug', debugRoutes);
 
-// ✅ MUHAMMAD AHMED: Ye line add ki hai taake frontend ki /api/resources call yahan aaye
+// ✅ Muhammad Ahmed: 404 Fix
+// Agar frontend /api/resources bhej raha hai:
 app.use('/api/resources', resourceRoutes);
+// Agar frontend direct /resources bhej raha hai (Fallback):
+app.use('/resources', resourceRoutes);
 
-app.get('/', (req, res) => res.send('🚀 Lahore Portal Backend is Running!'));
+// ✅ Feedback System (New Feature)
+app.use('/api/feedback', feedbackRoutes);
+
+app.get('/', (req, res) => res.send('🚀 Lahore Portal Backend is Running!'));                     
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
