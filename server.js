@@ -17,7 +17,6 @@ import attendanceRoutes from './routes/attendanceRoutes.js';
 import studentRoutes from './routes/studentRoutes.js';
 import quizRoutes from './routes/quizRoutes.js'; 
 import debugRoutes from './routes/debugRoutes.js';
-// ✅ MUHAMMAD AHMED: Ye import missing tha 
 import resourceRoutes from './routes/resourceRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -55,7 +54,7 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Static folder link for uploads (Resources & Profile Pics)
+// ✅ Static folder link for uploads
 app.use('/uploads', express.static(uploadDir));
 
 app.use(session({
@@ -84,8 +83,10 @@ app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/debug', debugRoutes);
 
-// ✅ MUHAMMAD AHMED: Ye line add ki hai taake frontend ki /api/resources call yahan aaye
+// ✅ 404 FIX: Frontend hit kar raha hai /resources/course/... 
+// Humne '/api/resources' aur '/resources' dono ko register kar diya hai taake error na aaye
 app.use('/api/resources', resourceRoutes);
+app.use('/resources', resourceRoutes); 
 
 app.get('/', (req, res) => res.send('🚀 Lahore Portal Backend is Running!'));
 
