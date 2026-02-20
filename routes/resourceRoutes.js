@@ -16,9 +16,12 @@ router.post('/upload', verifyToken, upload.single('file'), async (req, res) => {
             finalPath = video_link;
         } else {
             if (!req.file) return res.status(400).json({ success: false, error: "File upload karein!" });
+            // Consistent path for Lahore Portal
             finalPath = `/uploads/${req.file.filename}`;
         }
 
+        // Muhammad Ahmed: Data insert karte waqt course_id save hogi, 
+        // lekin fetch karte waqt hum sab ko dikhayenge.
         const result = await pool.query(
             `INSERT INTO resources (title, description, resource_type, file_path, course_id, teacher_id) 
              VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
@@ -36,9 +39,9 @@ router.post('/upload', verifyToken, upload.single('file'), async (req, res) => {
     }
 });
 
-// --- 2. GET ALL RESOURCES (Fixing 404 for Muhammad Ahmed) ---
-// Yeh route '/course/:courseId' aur direct '/:courseId' dono par kaam karega
-router.get(['/course/:courseId', '/:courseId'], async (req, res) => {
+// --- 2. GET ALL RESOURCES (Global for all Students) ---
+// Muhammad Ahmed, ab ye student ki screen par har uploaded cheez dikhayega
+router.get('/course/:courseId', async (req, res) => {
     const { courseId } = req.params;
     try {
         const result = await pool.query(
@@ -50,8 +53,6 @@ router.get(['/course/:courseId', '/:courseId'], async (req, res) => {
              ORDER BY r.created_at DESC`,
             [courseId]
         );
-        
-        // Agar resources khali hon tab bhi success return karein taake 404 na aaye
         res.json({ success: true, resources: result.rows });
     } catch (err) {
         console.error("Fetch Error:", err.message);
