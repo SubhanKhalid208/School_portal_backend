@@ -12,7 +12,6 @@ router.post('/upload', verifyToken, upload.single('file'), async (req, res) => {
     try {
         let finalPath = '';
         
-        // Muhammad Ahmed: Check kar rahe hain ke link hai ya file
         if (resource_type === 'video_link' || resource_type === 'link') {
             finalPath = video_link;
         } else {
@@ -37,12 +36,11 @@ router.post('/upload', verifyToken, upload.single('file'), async (req, res) => {
     }
 });
 
-// --- 2. GET ALL RESOURCES (Fixing 404 and Data Visibility) ---
-// Muhammad Ahmed: Yahan array use kiya hai taake '/course/:courseId' aur '/:courseId' dono chalein
+// --- 2. GET ALL RESOURCES (Muhammad Ahmed: GLOBAL VIEW) ---
+// Yahan humne WHERE course_id hata diya hai taake khali list na aaye
 router.get(['/course/:courseId', '/:courseId'], async (req, res) => {
-    const { courseId } = req.params;
     try {
-        // ✅ ZAROORI: Browser ko force karna ke purana (304) data na dikhaye
+        // ✅ ZAROORI: Browser ko 304 status se rokne ke liye
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
 
         const result = await pool.query(
@@ -50,9 +48,7 @@ router.get(['/course/:courseId', '/:courseId'], async (req, res) => {
                     r.file_path as file_url, r.created_at, u.name as teacher_name 
              FROM resources r 
              LEFT JOIN users u ON r.teacher_id = u.id 
-             WHERE r.course_id = $1
-             ORDER BY r.created_at DESC`,
-            [courseId]
+             ORDER BY r.created_at DESC`
         );
 
         res.json({ 
