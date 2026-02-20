@@ -41,18 +41,18 @@ router.post('/upload', verifyToken, upload.single('file'), async (req, res) => {
 
 // --- 2. GET ALL RESOURCES (Global for all Students) ---
 // Muhammad Ahmed, ab ye student ki screen par har uploaded cheez dikhayega
-router.get('/course/:courseId', verifyToken, async (req, res) => {
+router.get('/course/:courseId', async (req, res) => {
+    const { courseId } = req.params;
     try {
-        // Yahan se WHERE condition hata di gayi hai taake global data milay
         const result = await pool.query(
             `SELECT r.id, r.title, r.description, r.resource_type, 
                     r.file_path as file_url, r.created_at, u.name as teacher_name 
              FROM resources r 
              LEFT JOIN users u ON r.teacher_id = u.id 
-             ORDER BY r.created_at DESC`
+             WHERE r.course_id = $1
+             ORDER BY r.created_at DESC`,
+            [courseId]
         );
-        
-        console.log(`Global Resources fetched:`, result.rows.length);
         res.json({ success: true, resources: result.rows });
     } catch (err) {
         console.error("Fetch Error:", err.message);
