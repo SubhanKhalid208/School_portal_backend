@@ -78,10 +78,7 @@ router.get('/student-attendance-report', async (req, res) => {
     }
 });
 
-// --- 3. NAYA TASK: Teacher Course Load Report (Complex SQL) ---
-// Muhammad Ahmed, ye wahi complex query hai jo senior ko dikhani hai
-// Is query ko apne backend mein update karein
-// Muhammad Ahmed, ye wala route ab 100% chalega
+
 router.get('/teacher-course-load', async (req, res) => {
     try {
         const query = `

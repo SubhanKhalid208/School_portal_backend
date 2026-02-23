@@ -37,7 +37,6 @@ router.post('/upload', verifyToken, upload.single('file'), async (req, res) => {
 });
 
 // --- 2. GET ALL RESOURCES (Muhammad Ahmed: GLOBAL VIEW) ---
-// Yahan humne WHERE course_id hata diya hai taake khali list na aaye
 router.get(['/course/:courseId', '/:courseId'], async (req, res) => {
     try {
         // ✅ ZAROORI: Browser ko 304 status se rokne ke liye
@@ -57,6 +56,52 @@ router.get(['/course/:courseId', '/:courseId'], async (req, res) => {
         });
     } catch (err) {
         console.error("Fetch Error:", err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// --- 3. DELETE RESOURCE (Muhammad Ahmed: Teacher Access) ---
+router.delete('/:id', verifyToken, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await pool.query("DELETE FROM resources WHERE id = $1 RETURNING *", [id]);
+        
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, message: "Resource nahi mila!" });
+        }
+
+        res.json({ success: true, message: "Resource deleted successfully! 🗑️" });
+    } catch (err) {
+        console.error("Delete Error:", err.message);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// --- 4. UPDATE/EDIT RESOURCE (Muhammad Ahmed: Teacher Access) ---
+router.put('/:id', verifyToken, async (req, res) => {
+    const { id } = req.params;
+    const { title, description, video_link } = req.body;
+    
+    try {
+        // Sirf Title, Description ya Link ko update karne ke liye
+        const result = await pool.query(
+            `UPDATE resources 
+             SET title = $1, description = $2, file_path = COALESCE($3, file_path) 
+             WHERE id = $4 RETURNING *`,
+            [title, description, video_link, id]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, message: "Update fail: Resource nahi mila!" });
+        }
+
+        res.json({ 
+            success: true, 
+            message: "Resource updated successfully! ✏️", 
+            resource: result.rows[0] 
+        });
+    } catch (err) {
+        console.error("Update Error:", err.message);
         res.status(500).json({ success: false, error: err.message });
     }
 });
