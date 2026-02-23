@@ -9,6 +9,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url'; 
 
 // Routes Imports
+import reportRoutes from './routes/reportRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import courseRoutes from './routes/courseRoutes.js';
 import teacherRoutes from './routes/teacherRoutes.js';
@@ -82,6 +83,7 @@ app.use('/api/student', studentRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/debug', debugRoutes);
+app.use('/api/reports', reportRoutes);
 
 // ✅ 404 FIX: Frontend hit kar raha hai /resources/course/... 
 // Humne '/api/resources' aur '/resources' dono ko register kar diya hai taake error na aaye
