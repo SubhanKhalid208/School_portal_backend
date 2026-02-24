@@ -13,7 +13,7 @@ router.get('/check-email-config', async (req, res) => {
   try {
     console.log('🔍 Checking Email Configuration...');
     
-    const config = {
+    const config = {    
       EMAIL_USER: process.env.EMAIL_USER ? '✅ Set' : '❌ NOT SET',
       EMAIL_PASS: process.env.EMAIL_PASS ? '✅ Set' : '❌ NOT SET',
       SMTP_HOST: 'smtp.gmail.com',
