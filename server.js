@@ -9,7 +9,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url'; 
 import { createServer } from 'http'; 
 import { Server } from 'socket.io'; 
-// ✅ Muhammad Ahmed: Path ensured to match your folder structure
+// ✅ Muhammad Ahmed: DB import
 import db from './config/db.js';
 
 // Routes Imports
@@ -35,7 +35,8 @@ const io = new Server(httpServer, {
   cors: {
     origin: ["http://localhost:3000", "https://school-portal-frontend-sigma.vercel.app"],
     methods: ["GET", "POST"],
-    credentials: true
+    credentials: true,
+    transports: ['websocket', 'polling']
   }
 });
 
@@ -69,7 +70,6 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ Static folder link for uploads
 app.use('/uploads', express.static(uploadDir));
 
 app.use(session({
@@ -88,35 +88,51 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ✅ MUHAMMAD AHMED: Route Fix for 404 & UI Time Formatting
+// ✅ MUHAMMAD AHMED: FIXED logic for history - Support for "31_32" format
 const getChatHistory = async (req, res) => {
     try {
-        const { roomId } = req.params;
-        const result = await db.query(
-            `SELECT room_id as "room", 
-                    sender_id as "senderId", 
-                    sender_name as "senderName", 
-                    message_text as "message", 
-                    sender_role as "role", 
-                    to_char(created_at, 'DD Mon, HH:MI AM') as "time" 
-             FROM messages 
-             WHERE room_id = $1
-             ORDER BY created_at ASC`,
-            [roomId]
-        );
-        // Agar data nahi hai to empty array bhejein taake UI crash na ho
-        res.json(result.rows || []);
+        let { roomId } = req.params; 
+        
+        // Muhammad Ahmed: Purani logic 'private_' clean karne ki
+        const cleanId = roomId.replace('private_', '');
+
+        const query = `
+            SELECT room_id as "room", 
+                   sender_id as "senderId", 
+                   message_text as "message", 
+                   to_char(created_at, 'DD Mon, HH:MI AM') as "time" 
+            FROM messages 
+            WHERE room_id = $1 
+               OR room_id = $2
+               OR room_id LIKE $3 
+               OR room_id LIKE $4
+               OR sender_id::text = $2
+               OR receiver_id::text = $2
+            ORDER BY created_at ASC
+        `;
+        
+        // Values: Original Room (31_32), Cleaned ID (32), Wildcards for partial matches
+        const values = [roomId, cleanId, `${cleanId}_%`, `%_${cleanId}`];
+        
+        const result = await db.query(query, values);
+        
+        res.json({
+            success: true,
+            data: result.rows || []
+        });
     } catch (err) {
         console.error("❌ History Load Error:", err);
-        res.status(500).json({ error: "Purani chat load nahi ho saki" });
+        res.status(500).json({ 
+            success: false, 
+            error: "Purani chat load nahi ho saki" 
+        });
     }
 };
 
-// Registering both routes to ensure frontend finds it (Fixes your 404)
-app.get('/api/chat/history/:roomId', getChatHistory);
-app.get('/chat/history/:roomId', getChatHistory);
+app.get('/api/chat/chat-history/:roomId', getChatHistory);
+app.get('/chat/chat-history/:roomId', getChatHistory);
 
-// ✅ API Routes Setup
+// API Routes Setup
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
@@ -140,35 +156,57 @@ io.on('connection', (socket) => {
     });
 
     socket.on('send_message', async (data) => {
-        const { senderId, senderName, message, role, room } = data;
+        const { senderId, receiverId, message, room } = data;
         const targetRoom = room || 'GLOBAL_ROOM';
         
+        // ✅ Muhammad Ahmed: Extraction logic standardized for 31_32
+        let finalReceiverId = null;
+        if (receiverId && !isNaN(receiverId)) {
+            finalReceiverId = parseInt(receiverId);
+        } else if (targetRoom.includes('_')) {
+            const parts = targetRoom.split('_');
+            // Room name se woh ID nikalna jo sender ki nahi hai (yani receiver ki hai)
+            const numericId = parts.find(p => !isNaN(p) && String(p) !== String(senderId));
+            finalReceiverId = numericId ? parseInt(numericId) : 1; 
+        } else {
+            finalReceiverId = 1; 
+        }
+
         try {
-            // Message empty check taake UI saaf rahe
             if(!message || message.trim() === "") return;
 
+            // Database Save
             await db.query(
-                "INSERT INTO messages (room_id, sender_id, sender_name, message_text, sender_role) VALUES ($1, $2, $3, $4, $5)",
-                [targetRoom, senderId, senderName, message, role || 'student']
+                "INSERT INTO messages (room_id, sender_id, receiver_id, message_text) VALUES ($1, $2, $3, $4)",
+                [targetRoom, senderId, finalReceiverId, message]
             );
             
-            // Foran response bhejna taake UI real-time update ho
             const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-            io.to(targetRoom).emit('receive_message', {
+            const responseData = {
                 ...data,
                 time: currentTime,
                 room: targetRoom
-            });
+            };
+
+            // ✅ Broadcast to target room (31_32)
+            io.to(targetRoom).emit('receive_message', responseData);
+            
+            // ✅ Fallback for individual delivery
+            if (receiverId) {
+                io.to(receiverId.toString()).emit('receive_message', responseData);
+            }
+
         } catch (err) {
-            console.error("❌ Neon DB Save Error:", err);
+            console.error("❌ Neon DB Save Error:", err.message);
         }
     });
 
     socket.on('typing', (data) => {
-        socket.broadcast.to(data.room || 'GLOBAL_ROOM').emit('user_typing', {
+        const targetRoom = data.room || 'GLOBAL_ROOM';
+        socket.broadcast.to(targetRoom).emit('user_typing', {
             status: data.status,
-            userName: data.userName
+            userName: data.userName,
+            room: targetRoom
         });
     });
 
@@ -179,5 +217,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 5000;
 httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
 });

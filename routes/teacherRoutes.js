@@ -3,19 +3,12 @@ import pool from '../config/db.js';
 const router = express.Router();
 import * as teacherController from '../controllers/teacherController.js';
 
-// ✅ JWT Middleware Import karein
-// Yaad rahe Railway ke liye extension .js lazmi hai
+// ✅ JWT Middleware Import
 import { verifyToken } from '../middleware/authMiddleware.js';
-import { upload } from '../config/multer.js'; // ✅ Add multer import
-
-// Sabhi routes ko protect karne ke liye hum global middleware bhi laga sakte hain
-// Ya har route par alag se (niche wala tarika behtar hai)
+import { upload } from '../config/multer.js';
 
 // --- 1. GET DASHBOARD STATS (Secure) ---
-// Pehle: /stats?teacherId=3
-// Ab: /stats (ID token se khud nikal aayegi)
 router.get('/stats', verifyToken, async (req, res) => {
-    // verifyToken middleware ne 'req.user' set kar diya hai
     const teacherId = req.user.id; 
 
     try {
@@ -57,7 +50,7 @@ router.get('/my-courses', verifyToken, async (req, res) => {
 
 router.post('/courses/add', verifyToken, async (req, res) => {
     const { title, description } = req.body;
-    const teacher_id = req.user.id; // User ID manually bhejne ki zaroorat nahi
+    const teacher_id = req.user.id;
 
     if (!title) return res.status(400).json({ error: "Title lazmi hai." });
 
@@ -78,7 +71,6 @@ router.put('/courses/:id', verifyToken, async (req, res) => {
     const teacherId = req.user.id;
 
     try {
-        // Sirf wahi teacher update kar sake jis ka course hai
         const result = await pool.query(
             "UPDATE courses SET title = $1, description = $2 WHERE id = $3 AND teacher_id = $4 RETURNING *",
             [title, description, id, teacherId]
@@ -102,7 +94,19 @@ router.delete('/courses/:id', verifyToken, async (req, res) => {
     }
 });
 
-// --- 3. ATTENDANCE & STUDENTS (Protected) ---
+// --- 3. ATTENDANCE & REGISTERED STUDENTS ---
+router.get('/all-students', verifyToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT id, name, email, profile_pic FROM users WHERE LOWER(role) = \'student\' ORDER BY name ASC'
+        );
+        res.json({ success: true, data: result.rows || [] });
+    } catch (err) {
+        console.error("❌ Fetch Students Error:", err.message);
+        res.status(500).json({ success: false, error: "Students list load nahi ho saki." });
+    }
+});
+
 router.get('/students', verifyToken, async (req, res) => {
     try {
         const result = await pool.query('SELECT id, name, email FROM users WHERE LOWER(role) = \'student\' ORDER BY name ASC');
@@ -114,7 +118,29 @@ router.get('/students', verifyToken, async (req, res) => {
 
 router.post('/attendance/mark', verifyToken, teacherController.markAttendance);
 
-// --- 4. TEACHER PROFILE PICTURE UPLOAD ---
+// --- 4. PRIVATE CHAT HISTORY (Muhammad Ahmed: Naye table structure ke liye) ---
+router.get('/chat-history/:roomId', verifyToken, async (req, res) => {
+    const { roomId } = req.params;
+    try {
+        const result = await pool.query(
+            `SELECT 
+                room_id as "room", 
+                sender_id as "senderId", 
+                message_text as "message", 
+                to_char(created_at, 'DD Mon, HH:MI AM') as "time" 
+             FROM messages 
+             WHERE room_id = $1 
+             ORDER BY created_at ASC`,
+            [roomId]
+        );
+        res.json({ success: true, data: result.rows || [] });
+    } catch (err) {
+        console.error("❌ Chat History Error:", err.message);
+        res.status(500).json({ success: false, error: "Purani chat load nahi ho saki." });
+    }
+});
+
+// --- 5. TEACHER PROFILE PICTURE UPLOAD ---
 router.post('/upload-profile-pic/:teacherId', verifyToken, upload.single('profilePic'), async (req, res) => {
     const { teacherId } = req.params;
     if (!req.file) return res.status(400).json({ success: false, error: "Image select karna lazmi hai!" });
