@@ -16,7 +16,10 @@ router.get('/stats', verifyToken, async (req, res) => {
             SELECT 
                 (SELECT COUNT(*) FROM users WHERE LOWER(role) = 'student') as total_students,
                 (SELECT COUNT(*) FROM courses WHERE teacher_id = $1) as total_subjects,
-                (SELECT name FROM users WHERE id = $1) as teacher_name
+                (SELECT name FROM users WHERE id = $1) as teacher_name,
+                -- ✅ Muhammad Ahmed: Poore portal ke tammam unread messages ka sum
+                (SELECT COUNT(*) FROM messages WHERE receiver_id = $1 AND is_read = false) as global_unread_count
+            FROM users WHERE id = $1
         `;
         const result = await pool.query(statsQuery, [teacherId]);
         const data = result.rows[0];
@@ -25,7 +28,8 @@ router.get('/stats', verifyToken, async (req, res) => {
             success: true,
             totalStudents: parseInt(data.total_students) || 0,
             totalSubjects: parseInt(data.total_subjects) || 0,
-            teacherName: data.teacher_name || "Teacher" 
+            teacherName: data.teacher_name || "Teacher",
+            totalUnreadMessages: parseInt(data.global_unread_count) || 0 // Ye button ke liye hai
         });
     } catch (err) {
         console.error("❌ Stats Error:", err.message);
@@ -94,11 +98,21 @@ router.delete('/courses/:id', verifyToken, async (req, res) => {
     }
 });
 
-// --- 3. ATTENDANCE & REGISTERED STUDENTS ---
+// --- 3. ATTENDANCE & REGISTERED STUDENTS (Muhammad Ahmed: Unread Count & Sorting logic added here) ---
 router.get('/all-students', verifyToken, async (req, res) => {
+    const teacherId = req.user.id;
     try {
         const result = await pool.query(
-            'SELECT id, name, email, profile_pic FROM users WHERE LOWER(role) = \'student\' ORDER BY name ASC'
+            `SELECT 
+                u.id, u.name, u.email, u.profile_pic,
+                -- Har student ke kitne messages unread hain
+                (SELECT COUNT(*) FROM messages WHERE sender_id = u.id AND receiver_id = $1 AND is_read = false) as unread_count,
+                -- Aakhri message ka waqt sorting ke liye
+                (SELECT MAX(created_at) FROM messages WHERE (sender_id = u.id AND receiver_id = $1) OR (sender_id = $1 AND receiver_id = u.id)) as last_activity
+             FROM users u 
+             WHERE LOWER(u.role) = 'student' 
+             ORDER BY last_activity DESC NULLS LAST, u.name ASC`,
+             [teacherId]
         );
         res.json({ success: true, data: result.rows || [] });
     } catch (err) {
@@ -109,7 +123,7 @@ router.get('/all-students', verifyToken, async (req, res) => {
 
 router.get('/students', verifyToken, async (req, res) => {
     try {
-        const result = await pool.query('SELECT id, name, email FROM users WHERE LOWER(role) = \'student\' ORDER BY name ASC');
+        const result = await pool.query("SELECT id, name, email FROM users WHERE LOWER(role) = 'student' ORDER BY name ASC");
         res.json({ success: true, data: result.rows || [] });
     } catch (err) {
         res.status(500).json({ success: false, error: "Students list load nahi ho saki." });
@@ -118,7 +132,7 @@ router.get('/students', verifyToken, async (req, res) => {
 
 router.post('/attendance/mark', verifyToken, teacherController.markAttendance);
 
-// --- 4. PRIVATE CHAT HISTORY (Muhammad Ahmed: Naye table structure ke liye) ---
+// --- 4. PRIVATE CHAT HISTORY & MARK READ ---
 router.get('/chat-history/:roomId', verifyToken, async (req, res) => {
     const { roomId } = req.params;
     try {
@@ -127,6 +141,8 @@ router.get('/chat-history/:roomId', verifyToken, async (req, res) => {
                 room_id as "room", 
                 sender_id as "senderId", 
                 message_text as "message", 
+                file_url as "fileUrl",
+                file_name as "fileName",
                 to_char(created_at, 'DD Mon, HH:MI AM') as "time" 
              FROM messages 
              WHERE room_id = $1 
@@ -137,6 +153,21 @@ router.get('/chat-history/:roomId', verifyToken, async (req, res) => {
     } catch (err) {
         console.error("❌ Chat History Error:", err.message);
         res.status(500).json({ success: false, error: "Purani chat load nahi ho saki." });
+    }
+});
+
+// ✅ Muhammad Ahmed: Naya route messages ko read mark karne ke liye
+router.put('/chat/mark-read/:studentId', verifyToken, async (req, res) => {
+    const { studentId } = req.params;
+    const teacherId = req.user.id;
+    try {
+        await pool.query(
+            "UPDATE messages SET is_read = true WHERE sender_id = $1 AND receiver_id = $2 AND is_read = false",
+            [studentId, teacherId]
+        );
+        res.json({ success: true, message: "Marked as read" });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 
