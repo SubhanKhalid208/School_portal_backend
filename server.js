@@ -9,10 +9,10 @@ import fs from 'fs';
 import { fileURLToPath } from 'url'; 
 import { createServer } from 'http'; 
 import { Server } from 'socket.io'; 
-// ✅ Muhammad Ahmed: DB import
-import db from './config/db.js';
 
-// Routes Imports
+import db from './config/db.js';
+import { upload } from './config/multer.js'; // Ensure this file exists for uploads
+
 import reportRoutes from './routes/reportRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import courseRoutes from './routes/courseRoutes.js';
@@ -30,7 +30,6 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const httpServer = createServer(app); 
 
-// ✅ Socket.io Configuration
 const io = new Server(httpServer, {
   cors: {
     origin: ["http://localhost:3000", "https://school-portal-frontend-sigma.vercel.app"],
@@ -40,7 +39,6 @@ const io = new Server(httpServer, {
   }
 });
 
-// ✅ Uploads folder setup
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir, { recursive: true });
@@ -72,14 +70,15 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/uploads', express.static(uploadDir));
 
+// ✅ MUHAMMAD AHMED: Session adjustment for Localhost testing
 app.use(session({
   secret: process.env.SESSION_SECRET || 'lahore_secret_2026',
   resave: false,
   saveUninitialized: false, 
   proxy: true, 
   cookie: { 
-    secure: true, 
-    sameSite: 'none', 
+    secure: process.env.NODE_ENV === 'production', // Localhost pe false hona chahiye
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', 
     httpOnly: true, 
     maxAge: 24 * 60 * 60 * 1000 
   }
@@ -88,32 +87,51 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// ✅ MUHAMMAD AHMED: FIXED logic for history - Support for "31_32" format
+// ✅ MUHAMMAD AHMED: FIXED Upload Endpoint (Frontend calls /chat/upload)
+app.post('/chat/upload', upload.single('file'), (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+        const fileUrl = `/uploads/${req.file.filename}`;
+        res.json({ success: true, fileUrl, fileName: req.file.originalname });
+    } catch (err) {
+        res.status(500).json({ success: false, error: 'Upload failed' });
+    }
+});
+
+// Double check ke agar purana path bhi use ho raha ho
+app.post('/api/chat/upload', upload.single('file'), (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+        const fileUrl = `/uploads/${req.file.filename}`;
+        res.json({ success: true, fileUrl, fileName: req.file.originalname });
+    } catch (err) {
+        res.status(500).json({ success: false, error: 'Upload failed' });
+    }
+});
+
+// ✅ MUHAMMAD AHMED: History logic
 const getChatHistory = async (req, res) => {
     try {
         let { roomId } = req.params; 
-        
-        // Muhammad Ahmed: Purani logic 'private_' clean karne ki
         const cleanId = roomId.replace('private_', '');
 
         const query = `
-            SELECT room_id as "room", 
-                   sender_id as "senderId", 
-                   message_text as "message", 
-                   to_char(created_at, 'DD Mon, HH:MI AM') as "time" 
+            SELECT 
+                room_id as "room", 
+                sender_id as "senderId", 
+                message_text as "message", 
+                file_url as "fileUrl",
+                file_name as "fileName",
+                to_char(created_at, 'DD Mon, HH:MI AM') as "time" 
             FROM messages 
             WHERE room_id = $1 
                OR room_id = $2
                OR room_id LIKE $3 
                OR room_id LIKE $4
-               OR sender_id::text = $2
-               OR receiver_id::text = $2
             ORDER BY created_at ASC
         `;
         
-        // Values: Original Room (31_32), Cleaned ID (32), Wildcards for partial matches
         const values = [roomId, cleanId, `${cleanId}_%`, `%_${cleanId}`];
-        
         const result = await db.query(query, values);
         
         res.json({
@@ -121,7 +139,7 @@ const getChatHistory = async (req, res) => {
             data: result.rows || []
         });
     } catch (err) {
-        console.error("❌ History Load Error:", err);
+        console.error("❌ History Load Error:", err.message);
         res.status(500).json({ 
             success: false, 
             error: "Purani chat load nahi ho saki" 
@@ -132,7 +150,6 @@ const getChatHistory = async (req, res) => {
 app.get('/api/chat/chat-history/:roomId', getChatHistory);
 app.get('/chat/chat-history/:roomId', getChatHistory);
 
-// API Routes Setup
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
@@ -156,16 +173,14 @@ io.on('connection', (socket) => {
     });
 
     socket.on('send_message', async (data) => {
-        const { senderId, receiverId, message, room } = data;
+        const { senderId, receiverId, message, room, fileUrl, fileName } = data;
         const targetRoom = room || 'GLOBAL_ROOM';
         
-        // ✅ Muhammad Ahmed: Extraction logic standardized for 31_32
         let finalReceiverId = null;
         if (receiverId && !isNaN(receiverId)) {
             finalReceiverId = parseInt(receiverId);
         } else if (targetRoom.includes('_')) {
             const parts = targetRoom.split('_');
-            // Room name se woh ID nikalna jo sender ki nahi hai (yani receiver ki hai)
             const numericId = parts.find(p => !isNaN(p) && String(p) !== String(senderId));
             finalReceiverId = numericId ? parseInt(numericId) : 1; 
         } else {
@@ -173,12 +188,11 @@ io.on('connection', (socket) => {
         }
 
         try {
-            if(!message || message.trim() === "") return;
+            if((!message || message.trim() === "") && !fileUrl) return;
 
-            // Database Save
             await db.query(
-                "INSERT INTO messages (room_id, sender_id, receiver_id, message_text) VALUES ($1, $2, $3, $4)",
-                [targetRoom, senderId, finalReceiverId, message]
+                "INSERT INTO messages (room_id, sender_id, receiver_id, message_text, file_url, file_name) VALUES ($1, $2, $3, $4, $5, $6)",
+                [targetRoom, senderId, finalReceiverId, message || '', fileUrl || null, fileName || null]
             );
             
             const currentTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -188,10 +202,8 @@ io.on('connection', (socket) => {
                 room: targetRoom
             };
 
-            // ✅ Broadcast to target room (31_32)
             io.to(targetRoom).emit('receive_message', responseData);
             
-            // ✅ Fallback for individual delivery
             if (receiverId) {
                 io.to(receiverId.toString()).emit('receive_message', responseData);
             }
