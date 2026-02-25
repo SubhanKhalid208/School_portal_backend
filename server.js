@@ -108,7 +108,7 @@ app.post('/api/chat/upload', upload.single('file'), (req, res) => {
         res.status(500).json({ success: false, error: 'Upload failed' });
     }
 });
-
+     
 // ✅ MUHAMMAD AHMED: History logic
 const getChatHistory = async (req, res) => {
     try {
