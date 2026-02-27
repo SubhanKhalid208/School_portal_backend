@@ -98,7 +98,7 @@ router.delete('/courses/:id', verifyToken, async (req, res) => {
     }
 });
 
-// --- 3. ATTENDANCE & REGISTERED STUDENTS (Muhammad Ahmed: Unread Count & Sorting logic added here) ---
+// --- 3. ATTENDANCE & REGISTERED STUDENTS ---
 router.get('/all-students', verifyToken, async (req, res) => {
     const teacherId = req.user.id;
     try {
@@ -156,7 +156,6 @@ router.get('/chat-history/:roomId', verifyToken, async (req, res) => {
     }
 });
 
-// ✅ Muhammad Ahmed: Naya route messages ko read mark karne ke liye
 router.put('/chat/mark-read/:studentId', verifyToken, async (req, res) => {
     const { studentId } = req.params;
     const teacherId = req.user.id;
@@ -182,6 +181,55 @@ router.post('/upload-profile-pic/:teacherId', verifyToken, upload.single('profil
         res.json({ success: true, message: "Profile picture update ho gayi!", profile_pic: imagePath });
     } catch (err) {
         res.status(500).json({ success: false, error: "Upload Error: " + err.message });
+    }
+});
+
+// --- 6. TEACHER CLOUD NOTES (Muhammad Ahmed: Naye Routes Yahan Hain) ---
+
+// Get all notes for the logged-in teacher
+router.get('/notes', verifyToken, async (req, res) => {
+    const teacherId = req.user.id;
+    try {
+        const result = await pool.query(
+            'SELECT * FROM teacher_notes WHERE teacher_id = $1 ORDER BY created_at DESC', 
+            [teacherId]
+        );
+        res.json({ success: true, data: result.rows || [] });
+    } catch (err) {
+        res.status(500).json({ success: false, error: "Notes load nahi ho sakay." });
+    }
+});
+
+// Add a new note
+router.post('/notes', verifyToken, async (req, res) => {
+    const { text } = req.body;
+    const teacherId = req.user.id;
+    if (!text) return res.status(400).json({ error: "Note empty nahi ho sakta." });
+
+    try {
+        const result = await pool.query(
+            'INSERT INTO teacher_notes (teacher_id, text) VALUES ($1, $2) RETURNING *',
+            [teacherId, text]
+        );
+        res.status(201).json({ success: true, data: result.rows[0] });
+    } catch (err) {
+        res.status(500).json({ success: false, error: "Note save nahi ho saka." });
+    }
+});
+
+// Delete a note
+router.delete('/notes/:id', verifyToken, async (req, res) => {
+    const { id } = req.params;
+    const teacherId = req.user.id;
+    try {
+        const result = await pool.query(
+            'DELETE FROM teacher_notes WHERE id = $1 AND teacher_id = $2', 
+            [id, teacherId]
+        );
+        if (result.rowCount === 0) return res.status(404).json({ error: "Note nahi mila." });
+        res.json({ success: true, message: "Note deleted successfully." });
+    } catch (err) {
+        res.status(500).json({ success: false, error: "Delete fail ho gaya." });
     }
 });
 

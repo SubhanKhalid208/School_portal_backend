@@ -1,5 +1,6 @@
 import pool from '../config/db.js';
 
+// --- 1. GET DASHBOARD STATS ---
 export const getStats = async (req, res) => {
     const { teacherId } = req.query; 
     
@@ -22,6 +23,7 @@ export const getStats = async (req, res) => {
     }
 };
 
+// --- 2. ATTENDANCE LOGIC ---
 export const markAttendance = async (req, res) => {
     const { studentId, courseId, status, date, teacherId } = req.body;
     const attDate = date || new Date().toISOString().split('T')[0];
@@ -44,5 +46,57 @@ export const markAttendance = async (req, res) => {
     } catch (err) {
         console.error("Attendance Mark Error:", err.message);
         res.status(500).json({ error: "Attendance save nahi ho saki." });
+    }
+};
+
+// --- 3. TEACHER CLOUD NOTES (Muhammad Ahmed: Naya Logic Yahan Hai) ---
+
+// Get all notes for the logged-in teacher
+export const getNotes = async (req, res) => {
+    const teacherId = req.user.id; // verifyToken middleware se ID mil rahi hai
+    try {
+        const result = await pool.query(
+            'SELECT * FROM teacher_notes WHERE teacher_id = $1 ORDER BY created_at DESC', 
+            [teacherId]
+        );
+        res.json({ success: true, data: result.rows || [] });
+    } catch (err) {
+        console.error("Fetch Notes Error:", err.message);
+        res.status(500).json({ success: false, error: "Notes fetch nahi ho sakay." });
+    }
+};
+
+// Add a new note
+export const addNote = async (req, res) => {
+    const { text } = req.body;
+    const teacherId = req.user.id;
+    if (!text) return res.status(400).json({ error: "Note empty nahi ho sakta." });
+
+    try {
+        const result = await pool.query(
+            'INSERT INTO teacher_notes (teacher_id, text) VALUES ($1, $2) RETURNING *',
+            [teacherId, text]
+        );
+        res.status(201).json({ success: true, data: result.rows[0] });
+    } catch (err) {
+        console.error("Add Note Error:", err.message);
+        res.status(500).json({ success: false, error: "Note save nahi ho saka." });
+    }
+};
+
+// Delete a note
+export const deleteNote = async (req, res) => {
+    const { id } = req.params;
+    const teacherId = req.user.id;
+    try {
+        const result = await pool.query(
+            'DELETE FROM teacher_notes WHERE id = $1 AND teacher_id = $2', 
+            [id, teacherId]
+        );
+        if (result.rowCount === 0) return res.status(404).json({ error: "Note nahi mila." });
+        res.json({ success: true, message: "Note deleted successfully." });
+    } catch (err) {
+        console.error("Delete Note Error:", err.message);
+        res.status(500).json({ success: false, error: "Delete fail ho gaya." });
     }
 };

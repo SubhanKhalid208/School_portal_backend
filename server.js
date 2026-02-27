@@ -150,10 +150,11 @@ const getChatHistory = async (req, res) => {
 app.get('/api/chat/chat-history/:roomId', getChatHistory);
 app.get('/chat/chat-history/:roomId', getChatHistory);
 
+// ✅ ROUTES MOUNTING
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/courses', courseRoutes);
-app.use('/api/teacher', teacherRoutes);
+app.use('/api/teacher', teacherRoutes); // <-- Cloud Notes yahan se handle honge
 app.use('/api/student', studentRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/quiz', quizRoutes);
